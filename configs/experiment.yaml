@@ -1,0 +1,29 @@
+# Phase 5 input: the drift experiment.
+budget:
+  trials: 15             # identical for every strategy (fair comparison rule)
+  n_initial_random: 5    # random trials before the surrogate is first fitted
+
+seeds: [0, 1, 2, 3, 4]   # at least 5
+
+strategies:
+  - no_retrain
+  - refit
+  - cold_bo
+  - warm_bo_all        # warm start from every past trial
+  - warm_bo_topk       # warm start from the top-k past configs as initial points
+
+warm_start:
+  top_k: 5
+
+splits:
+  n_windows: 5           # confirmed in Phase 2 against the real date range
+  valid_weeks: 8
+  test_weeks: 8
+
+drift:
+  method: ks             # 'ks' (scipy two-sample KS test) or 'evidently'
+  p_value_threshold: 0.05
+
+paths:
+  results_csv: results/drift_experiment.csv
+  history_dir: results/history

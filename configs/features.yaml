@@ -1,0 +1,15 @@
+# Phase 2 input. Every feature here must be computable from weeks strictly
+# before the target week.
+target:
+  column: modal_price
+  horizon_weeks: 1       # predict next week's price
+
+lags_weeks: [1, 2, 4, 8]
+rolling_mean_windows_weeks: [4, 8]
+
+calendar:
+  month: true
+  season: true
+
+categorical:
+  - market

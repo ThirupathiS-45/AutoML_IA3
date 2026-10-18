@@ -1,0 +1,24 @@
+# Phase 1 input. Market list is intentionally empty: it is chosen in Phase 1
+# from whichever markets actually have the most coverage in the raw files.
+crop: onion
+
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  weekly_parquet: data/processed/weekly.parquet
+  quality_report: results/data_quality.md
+
+date_range:
+  start: null          # set in Phase 1 once the raw file is inspected
+  end: null
+
+markets: []            # filled in Phase 1: 2-3 markets with the most data
+
+aggregate:
+  price_column: modal_price     # rupees per quintal
+  frequency: W-MON              # weekly buckets, weeks starting Monday
+  agg: mean
+
+# Stop rule from the project spec: halt and report if any chosen market is
+# missing more than this fraction of weeks in the selected date range.
+max_missing_week_fraction: 0.10

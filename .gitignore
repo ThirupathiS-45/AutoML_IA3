@@ -1,0 +1,35 @@
+# Data: never committed
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# Trained artifacts (the model card is committed, the binary is not)
+models/*.pkl
+models/*.joblib
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Tuning / framework scratch dirs
+structured_data_regressor/
+kerastuner_mlp/
+untitled_project/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
