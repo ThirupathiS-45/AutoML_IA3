@@ -12,12 +12,17 @@ dependencies = [
     "lightgbm>=4.7.0",
     "numpy>=2.4.6",
     "pandas>=3.0.6",
-    "pyarrow>=26.0.0",
     "pyyaml>=6.0.3",
-    "requests>=2.34.2",
     "scikit-learn>=1.9.1",
     "scipy>=1.17.1",
+    "tabulate>=0.10.0",
 ]
+
+[tool.uv]
+# `uv run` keeps the research stack installed so notebooks and the AutoKeras /
+# KerasTuner baselines work without re-syncing. The Docker image instead uses
+# `uv sync --no-default-groups`, which installs neither dev nor research.
+default-groups = ["dev", "research"]
 
 [build-system]
 requires = ["hatchling"]
@@ -62,5 +67,8 @@ research = [
     "jupyter>=1.1.1",
     "keras-tuner>=1.4.8",
     "matplotlib>=3.11.2",
+    "pyarrow>=26.0.0",
+    "requests>=2.34.2",
+    "tensorboard>=2.21.0",
     "tensorflow>=2.21.0",
 ]

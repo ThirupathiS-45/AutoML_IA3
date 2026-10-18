@@ -1,24 +1,65 @@
-# Phase 1 input. Market list is intentionally empty: it is chosen in Phase 1
-# from whichever markets actually have the most coverage in the raw files.
+# Phase 1 configuration.
+#
+# SOURCE NOTE (important, see README): the CEDA Agmarknet portal exposes daily
+# prices at STATE level. Its district-level endpoint returns HTTP 500/504, and
+# agmarknet.gov.in v2 requires a captcha. The modelled entity is therefore a
+# state-wide aggregate of mandi modal prices, not a single mandi. The column is
+# still called `market` so the code stays generic.
 crop: onion
+
+source:
+  name: ceda_agmarknet
+  base_url: https://agmarknet.ceda.ashoka.edu.in
+  prices_path: /api/prices
+  commodity_id: 23          # Onion, from GET /api/commodities
+  calculation_type: d       # daily
+  entity_level: state
+  chunk_years: 1
+  request_timeout_s: 180
+  retries: 3
+  sleep_between_s: 2.0
 
 paths:
   raw_dir: data/raw
   processed_dir: data/processed
   weekly_parquet: data/processed/weekly.parquet
+  daily_csv: data/processed/daily_clean.csv
   quality_report: results/data_quality.md
+  quality_plot: results/weekly_series.png
+  provenance: data/raw/provenance.json
 
 date_range:
-  start: null          # set in Phase 1 once the raw file is inspected
-  end: null
+  start: "2018-01-01"
+  end: "2025-10-30"         # last date CEDA returned on 2026-10-18
 
-markets: []            # filled in Phase 1: 2-3 markets with the most data
+# Candidate states, fetched then ranked by coverage. census_state_id values come
+# from GET /api/states?commodity_id=23
+candidate_markets:
+  - {id: 27, name: Maharashtra}
+  - {id: 29, name: Karnataka}
+  - {id: 24, name: Gujarat}
+  - {id: 23, name: Madhya Pradesh}
+  - {id: 8,  name: Rajasthan}
+  - {id: 9,  name: Uttar Pradesh}
+
+# Markets whose missing-week fraction is within this much of the best-covered market
+# are treated as equally complete, and the candidate_markets order above breaks the
+# tie. Without this, a two-week difference out of 409 would silently drop Maharashtra,
+# India's most important onion market.
+coverage_tie_tolerance: 0.02
+
+n_markets: 3                # keep the 3 best-covered series
+
+clean:
+  price_column: modal_price       # rupees per quintal
+  min_price: 100.0                # below this is a data-entry error, not a market price
+  max_price: 20000.0
+  outlier_log_mad_threshold: 5.0  # robust z-score on log price, within a market
 
 aggregate:
-  price_column: modal_price     # rupees per quintal
-  frequency: W-MON              # weekly buckets, weeks starting Monday
+  frequency: W-MON          # weekly buckets labelled by the Monday that starts them
   agg: mean
+  min_days_per_week: 3      # a week with fewer observed days is treated as missing
 
-# Stop rule from the project spec: halt and report if any chosen market is
-# missing more than this fraction of weeks in the selected date range.
+# Stop rule from the project spec.
 max_missing_week_fraction: 0.10

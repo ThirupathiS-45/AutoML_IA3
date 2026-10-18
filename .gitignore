@@ -11,9 +11,13 @@ data/processed/*
 *.key
 credentials.json
 
-# Trained artifacts (the model card is committed, the binary is not)
+# Trained artifacts. models/model.pkl, models/model_card.json and
+# models/serving_features.pkl ARE committed: the Docker image is built from a
+# git checkout and the app needs them to serve. Other experiment pickles are not.
 models/*.pkl
 models/*.joblib
+!models/model.pkl
+!models/serving_features.pkl
 
 # Python
 __pycache__/

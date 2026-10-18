@@ -1,0 +1,7 @@
+method,seed,budget,best_cv_error,test_accuracy,seconds,params
+random_search,0,12,0.11033,0.86609,10.89,"{'sgd_alpha': 0.0020696390580288476, 'tfidf_max_features': 27990, 'tfidf_min_df': 4, 'tfidf_ngram_max': 1}"
+custom_bo,0,12,0.11166,0.8541,12.31,"{'sgd_alpha': 0.00015304122616866653, 'tfidf_max_features': 14950, 'tfidf_min_df': 1, 'tfidf_ngram_max': 1}"
+random_search,1,12,0.11963,0.86009,12.15,"{'sgd_alpha': 0.006431110449352203, 'tfidf_max_features': 36790, 'tfidf_min_df': 6, 'tfidf_ngram_max': 1}"
+custom_bo,1,12,0.11564,0.85876,16.4,"{'sgd_alpha': 0.002937834485874755, 'tfidf_max_features': 19969, 'tfidf_min_df': 1, 'tfidf_ngram_max': 2}"
+random_search,2,12,0.11919,0.86076,10.75,"{'sgd_alpha': 0.006873528891351573, 'tfidf_max_features': 34787, 'tfidf_min_df': 5, 'tfidf_ngram_max': 1}"
+custom_bo,2,12,0.10546,0.87342,11.62,"{'sgd_alpha': 0.001245048775920194, 'tfidf_max_features': 44468, 'tfidf_min_df': 1, 'tfidf_ngram_max': 1}"

@@ -1,0 +1,40 @@
+# Phase 9: reuse the custom tuner on a task that has nothing to do with mandi prices.
+task: 20newsgroups
+
+data:
+  categories:
+    - alt.atheism
+    - comp.graphics
+    - sci.space
+    - rec.sport.hockey
+  remove: [headers, footers, quotes]
+
+budget:
+  trials: 12
+  n_initial_random: 4
+
+seeds: [0, 1, 2]
+
+# TF-IDF plus a linear classifier. Nothing here is shared with the LightGBM space,
+# which is the point: the tuner should not care what it is tuning.
+hyperparameters:
+  tfidf_min_df:
+    type: int
+    low: 1
+    high: 10
+  tfidf_max_features:
+    type: int
+    low: 2000
+    high: 50000
+  tfidf_ngram_max:
+    type: int
+    low: 1
+    high: 2
+  sgd_alpha:
+    type: float
+    low: 1.0e-7
+    high: 1.0e-2
+    log: true
+
+paths:
+  results_csv: results/generality.csv

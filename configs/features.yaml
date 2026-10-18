@@ -3,6 +3,18 @@
 target:
   column: modal_price
   horizon_weeks: 1       # predict next week's price
+  # 'level'  -> the model predicts the price directly.
+  # 'delta'  -> the model predicts the week-on-week CHANGE, which is added back onto
+  #             lag_1. Gradient-boosted trees cannot predict a value outside their
+  #             training range, so on a trending or spiking series 'level' can lose to
+  #             a naive forecast. Metrics are always reported on the price scale.
+  #
+  # MEASURED, not assumed. On this data, five windows, seed 0, 15 trials:
+  #   level  -> mean test MAE 200.6
+  #   delta  -> mean test MAE 142.8
+  #   naive  -> mean test MAE 141.6
+  # Delta reaches parity with the random walk; level does not.
+  mode: delta
 
 lags_weeks: [1, 2, 4, 8]
 rolling_mean_windows_weeks: [4, 8]

@@ -16,13 +16,19 @@ warm_start:
   top_k: 5
 
 splits:
-  n_windows: 5           # confirmed in Phase 2 against the real date range
-  valid_weeks: 8
-  test_weeks: 8
+  scheme: expanding      # 'expanding' (train on all history) or 'rolling'
+  train_weeks: null      # only used when scheme == 'rolling'
+  n_windows: 5
+  # 26-week blocks give 78 rows per block across three markets. Twelve-week blocks
+  # gave only 36, which is too few to choose hyperparameters from reliably.
+  valid_weeks: 26
+  test_weeks: 26
+  min_train_weeks: 104   # at least two years before the first validation week
 
 drift:
-  method: ks             # 'ks' (scipy two-sample KS test) or 'evidently'
-  p_value_threshold: 0.05
+  method: ks               # 'ks' (scipy two-sample KS test) or 'evidently'
+  p_value_threshold: 0.05  # family-wise, after Holm-Bonferroni correction
+  error_rise_margin: 0.10  # a deployed model 10% worse than last window counts as decayed
 
 paths:
   results_csv: results/drift_experiment.csv
