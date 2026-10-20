@@ -24,7 +24,7 @@ tasks, are both established ideas:
 | Celik & Vanschoren, *Adaptation Strategies for Automated Machine Learning on Evolving Data*, IEEE TPAMI 43(9), 2021 | Peer-reviewed journal |
 | Celik, Singh & Vanschoren, *Online AutoML: an adaptive AutoML framework for online learning*, Machine Learning 112, 2023 | Peer-reviewed journal |
 | Wu et al., *ChaCha for Online AutoML*, ICML 2021 | Peer-reviewed conference |
-| Feurer, Letham, Hutter & Bakshy, *Practical Transfer Learning for Bayesian Optimization*, arXiv:1802.02219 | **Preprint.** A peer-reviewed version has not been verified; check before citing in the report. |
+| Feurer, Letham, Hutter & Bakshy, *Practical Transfer Learning for Bayesian Optimization*, arXiv:1802.02219 | **Preprint only — verified 2026-10-20.** arXiv lists four versions (v1 Feb 2018 through v4 Oct 2022) with no journal reference and no publisher DOI, only the arXiv-issued `10.48550/arXiv.1802.02219`. Cite it as a preprint. |
 
 What this repository adds is a reproducible evaluation of those ideas on Indian
 commodity price data, with the optimizer written rather than imported, and the whole

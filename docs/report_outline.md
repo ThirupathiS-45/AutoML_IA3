@@ -23,9 +23,12 @@ actually been run.
   AutoML on evolving data. Closest prior art; establishes that the question matters.
 - Celik, Singh & Vanschoren 2023 (Machine Learning, peer-reviewed) — online AutoML.
 - Wu et al. 2021 (ICML, peer-reviewed) — ChaCha for online AutoML.
-- Feurer, Letham, Hutter & Bakshy, arXiv:1802.02219 (preprint; check for a published
-  version before citing) — transfer learning for Bayesian optimization, which is the
-  mechanism warm starting relies on.
+- Feurer, Letham, Hutter & Bakshy, arXiv:1802.02219 — transfer learning for Bayesian
+  optimization, the mechanism warm starting relies on. **Checked 2026-10-20: preprint
+  only.** No journal reference or publisher DOI on arXiv across four versions
+  (v1 Feb 2018 - v4 Oct 2022). Must be cited as a preprint, and the report should not
+  lean on it for a peer-reviewed claim. The three peer-reviewed works above carry that
+  weight instead.
 - What this project adds: an end-to-end deployment of those ideas on Indian mandi
   price data, with the tuner written from scratch rather than imported.
 
