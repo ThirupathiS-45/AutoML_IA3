@@ -22,6 +22,25 @@ After real market drift, does warm-started Bayesian search recover forecast accu
 fewer trials than (a) no retraining, (b) refitting the previous best settings, and
 (c) a cold-start search — under a small, equal trial budget?
 
+### The answer, measured on 4 crops x 5 strategies x 5 windows x 5 seeds
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| Warm start beats a **cold-start search** | **Modest yes** | wins 48/80 matched runs, raw p=0.039, lower mean in 3 of 4 crops |
+| Warm start beats **refitting** the old settings | **No** | wins 45/80, p=0.15 |
+| Warm start beats **no retraining at all** | **No** | wins 33/80, p=0.42 |
+
+Two things qualify all of it, and they are not footnotes:
+
+- **Nothing survives Holm-Bonferroni correction**, pooled or per crop. The pooled
+  strategy means span under two rupees per quintal, on series priced in thousands.
+- **Hyperparameter search is a poor use of effort on this data at all.** The cold search
+  *lost* to leaving the model alone in 52 of 80 runs (p=0.015 in no-retrain's favour).
+
+And the result moved as the scope widened — three runs, three answers. That instability
+is reported in full under [Phase 5](#phase-5-the-drift-experiment-core-result) rather
+than resolved in favour of the most flattering one.
+
 ## Honest framing
 
 This is an **empirical evaluation plus an end-to-end system, not a new algorithm.**
@@ -165,6 +184,11 @@ Every experiment takes `--crop` and defaults to the first crop in `configs/data.
 uv run python -m automl.experiments.run_drift --crop Tomato
 uv run python -m automl.registry --crop Onion --crop Potato
 ```
+
+The committed `results/drift_experiment.csv` is the four crops concatenated; the
+individual runs are kept in `results/by_crop/` so each can be checked on its own.
+`summarize.py` reads the combined file and reports the per-crop split before any pooled
+number, because the crops disagree.
 
 ### In a container
 
@@ -469,6 +493,30 @@ is no batch worth splitting, and the synchronisation cost would exceed the compu
 hundred shallow trees is far too small to need it. The useful axis here is *trial*
 parallelism across CPU cores, which is what is measured.
 
+## Project status
+
+| Area | State |
+| --- | --- |
+| Data pipeline (fetch, clean, weekly aggregate, quality report) | Done, 4 crops x 8 states, 2018-2025 |
+| Features and time windows, with leakage tests | Done |
+| Baselines (naive, LightGBM, AutoKeras, KerasTuner) | Done, **onion only** |
+| Custom Bayesian optimizer (space, GP surrogate, EI, resume, warm start) | Done |
+| BO vs random search | Done, **onion only** |
+| Drift experiment | Done, **all four crops**, 420 rows |
+| Parallel trial timings | Done, **onion only** |
+| Model registry + model cards | Done, one model per crop |
+| FastAPI app + `web-start` + Docker + Jenkinsfile | Done |
+| Generality check (20 Newsgroups) | Done |
+| README, report outline | Done |
+| Report prose | **Not written.** The outline is in `docs/report_outline.md`. |
+
+Tests: 175 passing. `ruff check` and `ruff format --check` clean. Verified against a
+fresh checkout into an empty directory, where `uv sync && uv run web-start` serves
+immediately without downloading anything.
+
+Infrastructure (Terraform + Ansible) lives in the separate `mandi-infra` repository and
+is deliberately out of scope here.
+
 ## Repository layout
 
 ```
@@ -481,6 +529,9 @@ app/
   templates/        index.html
   static/           app.css, chart.js (hand-written SVG charts)
 results/            experiment CSVs, plots and reports (committed)
+  by_crop/          per-crop drift results, so each run stays auditable alone
+  summary.md        generated tables, facts kept apart from interpretation
+  data_quality.md   coverage and stop-rule report
 models/
   index.json        which crops are registered (committed)
   weekly_snapshot.csv  the table the app serves from (committed)
