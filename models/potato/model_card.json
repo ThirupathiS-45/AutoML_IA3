@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "created_utc": "2026-10-20T13:57:54+00:00",
+  "git_commit": "8d9d5a8",
+  "crop": "Potato",
+  "crop_slug": "potato",
+  "entity_level": "state",
+  "markets": [
+    "Gujarat",
+    "Karnataka",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Rajasthan",
+    "Uttar Pradesh"
+  ],
+  "train_start": "2018-01-08",
+  "train_end": "2025-10-27",
+  "test_start": "2025-05-05",
+  "test_end": "2025-10-27",
+  "horizon_weeks": 1,
+  "hyperparameters": {
+    "colsample_bytree": 0.6719128414235215,
+    "learning_rate": 0.00504398620272246,
+    "max_depth": 5,
+    "min_child_samples": 59,
+    "n_estimators": 530,
+    "num_leaves": 45,
+    "reg_lambda": 0.0010593175727166076,
+    "subsample": 0.8800840082557362
+  },
+  "metrics": {
+    "mae": 42.55,
+    "rmse": 63.502,
+    "mape": 2.815
+  },
+  "feature_names": [
+    "market",
+    "lag_1",
+    "lag_2",
+    "lag_4",
+    "lag_8",
+    "roll_mean_4",
+    "roll_std_4",
+    "roll_mean_8",
+    "roll_std_8",
+    "month",
+    "season"
+  ],
+  "n_train_rows": 2432,
+  "notes": "Metrics come from the held-out test block of the tuning window. The shipped model is then refitted on train+valid+test so it is as current as possible; those metrics are therefore out-of-sample for the tuning run but not for the shipped weights.",
+  "extra": {
+    "tuner": "custom GP Bayesian optimization",
+    "budget": 15,
+    "seed": 0,
+    "target_mode": "delta"
+  }
+}

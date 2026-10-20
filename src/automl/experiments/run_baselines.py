@@ -93,18 +93,21 @@ def lightgbm_default_record(
     }
 
 
-def run(window_index: int, with_deep: bool, output: str | Path) -> pd.DataFrame:
+def run(
+    window_index: int, with_deep: bool, output: str | Path, crop: str | None = None
+) -> pd.DataFrame:
     """Run every baseline and write the results CSV.
 
     Args:
         window_index: Zero-based index of the window to evaluate.
         with_deep: Whether to include the AutoKeras and KerasTuner baselines.
         output: Destination CSV path.
+        crop: Crop to evaluate. ``None`` uses the first configured crop.
 
     Returns:
         The results table.
     """
-    setup = build_setup()
+    setup = build_setup(crop=crop)
     window = setup.windows[window_index]
     LOGGER.info("baselines on window %d (%s)", window.window_id, window.as_record())
 
@@ -138,12 +141,13 @@ def main() -> None:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/experiment.yaml")
+    parser.add_argument("--crop", default=None, help="defaults to the first configured crop")
     parser.add_argument("--window", type=int, default=0, help="zero-based window index")
     parser.add_argument("--with-deep", action="store_true")
     parser.add_argument("--output", default="results/baselines.csv")
     args = parser.parse_args()
     setup_logging()
-    table = run(args.window, args.with_deep, args.output)
+    table = run(args.window, args.with_deep, args.output, args.crop)
     print(table.to_string(index=False))
 
 

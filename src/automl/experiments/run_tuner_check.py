@@ -34,7 +34,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run(
-    window_index: int, budget: int | None, seeds: list[int], output: str | Path
+    window_index: int,
+    budget: int | None,
+    seeds: list[int],
+    output: str | Path,
+    crop: str | None = None,
 ) -> pd.DataFrame:
     """Compare the custom tuner against random search on one window.
 
@@ -43,11 +47,12 @@ def run(
         budget: Trial budget. Defaults to the experiment config's value.
         seeds: Random seeds to repeat over.
         output: Destination CSV path.
+        crop: Crop to tune on. ``None`` uses the first configured crop.
 
     Returns:
         One row per (method, seed).
     """
-    setup = build_setup()
+    setup = build_setup(crop=crop)
     window = setup.windows[window_index]
     space = SearchSpace.from_config(setup.search_space_config)
     trials = budget or int(setup.experiment_config["budget"]["trials"])
@@ -104,13 +109,14 @@ def main() -> None:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/experiment.yaml")
+    parser.add_argument("--crop", default=None, help="defaults to the first configured crop")
     parser.add_argument("--window", type=int, default=0)
     parser.add_argument("--budget", type=int, default=None)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--output", default="results/tuner_vs_random.csv")
     args = parser.parse_args()
     setup_logging()
-    table = run(args.window, args.budget, args.seeds, args.output)
+    table = run(args.window, args.budget, args.seeds, args.output, args.crop)
     print()
     print(
         table.groupby("method")[["valid_mae", "test_mae", "seconds"]]

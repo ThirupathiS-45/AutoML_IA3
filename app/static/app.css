@@ -1,0 +1,133 @@
+/* Design tokens. Dark values are declared under both the OS media query and the
+   data-theme scope so a manual toggle wins either way. */
+:root {
+  color-scheme: light;
+  --page:           #f9f9f7;
+  --surface-1:      #fcfcfb;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+  --gridline:       #e1e0d9;
+  --axis:           #c3c2b7;
+  --series-1:       #2a78d6;  /* actual     */
+  --series-2:       #eb6834;  /* predicted  */
+  --series-3:       #1baf7a;  /* naive      */
+  --good:           #006300;
+  --bad:            #b3261e;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page:           #0d0d0d;
+    --surface-1:      #1a1a19;
+    --text-primary:   #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --axis:           #383835;
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --series-3:       #199e70;
+    --good:           #0ca30c;
+    --bad:            #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page:           #0d0d0d;
+  --surface-1:      #1a1a19;
+  --text-primary:   #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #898781;
+  --gridline:       #2c2c2a;
+  --axis:           #383835;
+  --series-1:       #3987e5;
+  --series-2:       #d95926;
+  --series-3:       #199e70;
+  --good:           #0ca30c;
+  --bad:            #e66767;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1060px; margin: 0 auto; padding: 1.75rem 1rem 4rem; }
+header h1 { font-size: 1.35rem; margin: 0 0 .2rem; letter-spacing: -0.01em; }
+.sub { color: var(--text-secondary); font-size: .875rem; margin: 0; }
+.sub code { background: var(--surface-1); padding: .05rem .3rem; border-radius: 4px; }
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--gridline);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+  margin-top: 1.1rem;
+}
+.card > h2 {
+  font-size: .78rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-muted); margin: 0 0 .85rem; font-weight: 600;
+}
+
+/* filters in one row above the charts */
+.filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: .3rem; }
+.field label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+select, button, input[type="range"] {
+  font: inherit; color: var(--text-primary); background: var(--page);
+  border: 1px solid var(--axis); border-radius: 6px; padding: .45rem .6rem;
+}
+button { cursor: pointer; border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+button:hover { background: var(--surface-1); }
+button[disabled] { opacity: .5; cursor: progress; }
+.spacer { flex: 1 1 auto; }
+
+/* hero number */
+.hero { display: flex; flex-wrap: wrap; gap: 2rem; align-items: baseline; }
+.hero .price { font-size: 2.6rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
+.hero .unit { font-size: .8rem; color: var(--text-muted); }
+.delta { font-weight: 600; font-size: 1rem; }
+.delta.up { color: var(--bad); }     /* a price rise is bad news for a buyer */
+.delta.down { color: var(--good); }
+.meta-line { color: var(--text-secondary); font-size: .85rem; margin-top: .5rem; }
+
+/* legend: always present for >= 2 series, with visible text labels */
+.legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: .5rem; font-size: .8rem; color: var(--text-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+figure { margin: 0; }
+figcaption { font-size: .78rem; color: var(--text-muted); margin-top: .45rem; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.tooltip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity .08s;
+  background: var(--surface-1); border: 1px solid var(--axis); border-radius: 7px;
+  padding: .5rem .6rem; font-size: .8rem; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+  z-index: 20; min-width: 150px;
+}
+.tooltip .tt-week { color: var(--text-muted); font-size: .72rem; margin-bottom: .3rem; }
+.tooltip .tt-row { display: flex; justify-content: space-between; gap: .9rem; }
+.tooltip .tt-row b { font-variant-numeric: tabular-nums; }
+
+table { border-collapse: collapse; width: 100%; font-size: .82rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: .3rem .5rem; border-bottom: 1px solid var(--gridline); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+details { margin-top: .9rem; }
+summary { cursor: pointer; color: var(--text-secondary); font-size: .82rem; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 1.6rem; margin-bottom: .9rem; }
+.stat .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.stat .v { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.verdict { font-size: .85rem; padding: .5rem .7rem; border-radius: 7px; border: 1px solid var(--gridline); }
+
+.banner { border-left: 3px solid var(--bad); padding-left: .8rem; color: var(--text-secondary); font-size: .87rem; }
+.live { font-size: .75rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.live b { color: var(--good); }
+kbd { font: inherit; background: var(--page); border: 1px solid var(--axis); border-radius: 4px; padding: 0 .25rem; }
+@media (max-width: 620px) { .hero .price { font-size: 2rem; } main { padding-left: 16px; padding-right: 16px; } }

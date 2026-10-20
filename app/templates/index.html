@@ -3,73 +3,259 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mandi onion price forecast</title>
-  <style>
-    :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#fafafa; --card:#fff; --line:#e0e0e0; --accent:#8a3324; }
-    @media (prefers-color-scheme: dark) {
-      :root { --fg:#e8e8e8; --bg:#161616; --card:#1f1f1f; --line:#333; --accent:#e8926f; }
-    }
-    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin:0;
-           background:var(--bg); color:var(--fg); line-height:1.5; }
-    main { max-width: 42rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-    h1 { font-size: 1.5rem; margin-bottom: .25rem; }
-    .sub { color: #888; margin-top: 0; font-size: .9rem; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
-            padding:1.25rem; margin-top:1.5rem; }
-    label { display:block; font-weight:600; margin-bottom:.4rem; }
-    select, button { font: inherit; padding:.55rem .7rem; border-radius:6px;
-                     border:1px solid var(--line); background:var(--card); color:var(--fg); }
-    button { background:var(--accent); color:#fff; border:none; cursor:pointer; margin-left:.5rem; }
-    .price { font-size:2.25rem; font-weight:700; color:var(--accent); margin:.25rem 0; }
-    .meta { font-size:.85rem; color:#888; }
-    .error { color:#b3261e; }
-    table { border-collapse: collapse; font-size:.85rem; width:100%; }
-    td { padding:.25rem .5rem .25rem 0; vertical-align: top; }
-    td:first-child { color:#888; white-space:nowrap; }
-  </style>
+  <title>Mandi Price Forecaster</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
+<body data-palette="#2a78d6,#eb6834,#1baf7a">
 <main>
-  <h1>Next week's onion price</h1>
-  <p class="sub">Weekly modal price, rupees per quintal. Forecast from a LightGBM model
-     tuned by a custom Bayesian optimizer.</p>
+  <header>
+    <h1>Mandi crop price forecaster</h1>
+    <p class="sub">
+      Next week's wholesale modal price, &#8377; per quintal. LightGBM tuned by a
+      hand-written Bayesian optimizer. Every figure on this page is computed when you
+      ask for it &mdash; nothing here is a stored answer.
+    </p>
+  </header>
 
-  <form method="post" class="card">
-    <label for="market">Market</label>
-    <select name="market" id="market">
-      {% for m in markets %}
-        <option value="{{ m }}" {% if m == selected %}selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit">Forecast</button>
-    {% if not markets %}<p class="error">No model is registered, so no markets are available.</p>{% endif %}
-  </form>
+  <div id="error" class="card banner" hidden></div>
 
-  {% if error %}<div class="card"><p class="error">{{ error }}</p></div>{% endif %}
+  <section class="card">
+    <h2>Pick a series</h2>
+    <div class="filters">
+      <div class="field">
+        <label for="crop">Crop</label>
+        <select id="crop"></select>
+      </div>
+      <div class="field">
+        <label for="market">State</label>
+        <select id="market"></select>
+      </div>
+      <div class="field">
+        <label for="weeks">History shown</label>
+        <select id="weeks">
+          <option value="52">1 year</option>
+          <option value="104" selected>2 years</option>
+          <option value="208">4 years</option>
+          <option value="500">All</option>
+        </select>
+      </div>
+      <div class="spacer"></div>
+      <button id="refresh" type="button">Recompute</button>
+    </div>
+    <p class="live" id="live"></p>
+  </section>
 
-  {% if result %}
-  <div class="card">
-    <div class="meta">{{ result.market }} &middot; week starting {{ result.for_week_starting }}</div>
-    <div class="price">&#8377;{{ "%.0f"|format(result.predicted_price_rs_per_quintal) }}</div>
-    <div class="meta">per quintal &middot; based on data through the week of
-      {{ result.based_on_week_starting }}</div>
-  </div>
-  {% endif %}
+  <section class="card">
+    <h2>Forecast</h2>
+    <div class="hero">
+      <div>
+        <div class="price" id="price">&mdash;</div>
+        <div class="unit" id="price-week"></div>
+      </div>
+      <div>
+        <div class="delta" id="delta">&mdash;</div>
+        <div class="unit">vs last observed week</div>
+      </div>
+    </div>
+    <p class="meta-line" id="forecast-meta"></p>
+  </section>
 
-  {% if card %}
-  <div class="card">
-    <strong>Model card</strong>
-    <table>
-      <tr><td>Version</td><td>{{ card.version }}</td></tr>
-      <tr><td>Commit</td><td>{{ card.git_commit }}</td></tr>
-      <tr><td>Created</td><td>{{ card.created_utc }}</td></tr>
-      <tr><td>Entity level</td><td>{{ card.entity_level }}</td></tr>
-      <tr><td>Trained through</td><td>{{ card.train_end }}</td></tr>
-      <tr><td>Test MAE</td><td>&#8377;{{ "%.0f"|format(card.metrics.mae) }}/quintal</td></tr>
-      <tr><td>Test RMSE</td><td>&#8377;{{ "%.0f"|format(card.metrics.rmse) }}/quintal</td></tr>
-    </table>
-  </div>
-  {% endif %}
+  <section class="card">
+    <h2>Observed price history</h2>
+    <figure>
+      <div id="history-chart"></div>
+      <figcaption id="history-caption"></figcaption>
+    </figure>
+  </section>
+
+  <section class="card">
+    <h2>How good is it, really?</h2>
+    <div class="stats" id="backtest-stats"></div>
+    <p class="verdict" id="verdict"></p>
+    <!-- legend always present for >= 2 series, with visible text labels -->
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--series-1)"></i> Actual price</span>
+      <span><i class="swatch" style="background:var(--series-2)"></i> Model forecast</span>
+      <span><i class="swatch" style="background:var(--series-3)"></i> Naive &ldquo;same as last week&rdquo;</span>
+    </div>
+    <figure>
+      <div id="backtest-chart"></div>
+      <figcaption>
+        The registered model re-run over recent weeks. It is not refitted here; each week
+        is predicted from earlier data only, then compared with what the price actually
+        turned out to be.
+      </figcaption>
+    </figure>
+    <details>
+      <summary>Show the numbers as a table</summary>
+      <div id="backtest-table"></div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Model card</h2>
+    <div id="card-table"></div>
+    <p class="sub" style="margin-top:.7rem">
+      Full API at <a href="/docs">/docs</a>. Raw endpoints:
+      <code>/api/predict</code>, <code>/api/history</code>, <code>/api/backtest</code>,
+      <code>/api/meta</code>, <code>/api/health</code>.
+    </p>
+  </section>
+
+  <p class="sub" id="provenance"></p>
 </main>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script type="module">
+import { lineChart, rupees } from "/static/chart.js";
+
+const $ = (id) => document.getElementById(id);
+const showError = (message) => {
+  const box = $("error");
+  box.hidden = !message;
+  box.textContent = message || "";
+};
+
+let meta = null;
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.detail || body.error || `${path} returned ${response.status}`);
+  }
+  return body;
+}
+
+function currentCrop() {
+  return meta.crops.find((c) => c.crop === $("crop").value) || meta.crops[0];
+}
+
+function fillMarkets() {
+  const crop = currentCrop();
+  const previous = $("market").value;
+  $("market").innerHTML = crop.markets
+    .map((m) => `<option value="${m}">${m}</option>`).join("");
+  if (crop.markets.includes(previous)) $("market").value = previous;
+}
+
+function renderBacktestTable(data) {
+  const rows = data.points.slice().reverse().map((p) => `
+    <tr><td>${p.week}</td><td>${rupees(p.actual)}</td><td>${rupees(p.predicted)}</td>
+    <td>${p.naive === null ? "&mdash;" : rupees(p.naive)}</td>
+    <td>${Math.round(p.predicted - p.actual) > 0 ? "+" : ""}${Math.round(p.predicted - p.actual)}</td></tr>`).join("");
+  $("backtest-table").innerHTML = `<table>
+    <thead><tr><th>Week</th><th>Actual</th><th>Model</th><th>Naive</th><th>Model error</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function renderCard(card) {
+  const pick = [
+    ["Crop", card.crop], ["Version", card.version], ["Git commit", card.git_commit],
+    ["Built", (card.created_utc || "").replace("T", " ")],
+    ["Entity level", card.entity_level],
+    ["Trained through", card.train_end],
+    ["Test MAE", rupees(card.metrics.mae) + " /quintal"],
+    ["Test RMSE", rupees(card.metrics.rmse) + " /quintal"],
+    ["Test MAPE", card.metrics.mape.toFixed(1) + "%"],
+    ["Horizon", card.horizon_weeks + " week"],
+    ["Target form", (card.extra || {}).target_mode || "level"],
+    ["Tuner", (card.extra || {}).tuner || "-"],
+    ["Trial budget", (card.extra || {}).budget ?? "-"],
+    ["Training rows", card.n_train_rows],
+  ];
+  $("card-table").innerHTML = `<table><tbody>${
+    pick.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+async function refresh() {
+  const crop = $("crop").value, market = $("market").value;
+  const weeks = Number($("weeks").value);
+  $("refresh").disabled = true;
+  showError("");
+  try {
+    const [forecast, history, backtest, card] = await Promise.all([
+      api("/api/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crop, market }),
+      }),
+      api(`/api/history?crop=${encodeURIComponent(crop)}&market=${encodeURIComponent(market)}&weeks=${weeks}`),
+      api(`/api/backtest?crop=${encodeURIComponent(crop)}&market=${encodeURIComponent(market)}&weeks=26`),
+      api(`/api/model/${encodeURIComponent(crop)}`),
+    ]);
+
+    $("price").textContent = rupees(forecast.predicted_price);
+    $("price-week").textContent = `per quintal, week of ${forecast.for_week_starting}`;
+    const up = forecast.change >= 0;
+    $("delta").className = "delta " + (up ? "up" : "down");
+    $("delta").textContent = `${up ? "+" : "−"}${rupees(Math.abs(forecast.change))} (${Math.abs(forecast.change_pct ?? 0).toFixed(1)}%)`;
+    $("forecast-meta").textContent =
+      `${forecast.crop} in ${forecast.market}. Last observed week ${forecast.based_on_week_starting} at `
+      + `${rupees(forecast.last_observed_price)}. Model v${forecast.model_version}, predicting the `
+      + `${forecast.target_mode === "delta" ? "week-on-week change" : "price level"}.`;
+
+    lineChart($("history-chart"), [{
+      name: `${forecast.crop}, ${market}`,
+      color: "var(--series-1)",
+      points: history.points.map((p) => ({ week: p.week, value: p.price })),
+    }]);
+    $("history-caption").textContent =
+      `${history.points.length} observed weeks. Source: CEDA Agmarknet portal.`;
+
+    lineChart($("backtest-chart"), [
+      { name: "Actual", color: "var(--series-1)", points: backtest.points.map((p) => ({ week: p.week, value: p.actual })) },
+      { name: "Model", color: "var(--series-2)", points: backtest.points.map((p) => ({ week: p.week, value: p.predicted })) },
+      { name: "Naive", color: "var(--series-3)", dashed: true, points: backtest.points.map((p) => ({ week: p.week, value: p.naive })) },
+    ]);
+
+    $("backtest-stats").innerHTML = `
+      <div class="stat"><div class="k">Model error (MAE)</div><div class="v">${rupees(backtest.model.mae)}</div></div>
+      <div class="stat"><div class="k">Naive error (MAE)</div><div class="v">${rupees(backtest.naive_last_week.mae)}</div></div>
+      <div class="stat"><div class="k">Weeks scored</div><div class="v">${backtest.weeks_scored}</div></div>`;
+    const gap = backtest.naive_last_week.mae - backtest.model.mae;
+    $("verdict").textContent = backtest.model_beats_naive
+      ? `Over these ${backtest.weeks_scored} weeks the model beat the naive forecast by ${rupees(Math.abs(gap))} per quintal on average.`
+      : `Over these ${backtest.weeks_scored} weeks the naive forecast was better by ${rupees(Math.abs(gap))} per quintal on average. Weekly prices behave close to a random walk, so this is a common and honest outcome rather than a bug.`;
+
+    renderBacktestTable(backtest);
+    renderCard(card);
+    $("live").innerHTML = `<b>&#9679; live</b> &mdash; computed on the server at ${forecast.computed_at_utc.replace("T", " ")} UTC`;
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    $("refresh").disabled = false;
+  }
+}
+
+async function boot() {
+  try {
+    meta = await api("/api/meta");
+  } catch (error) {
+    showError(error.message + "  — run the data and registry steps, then reload.");
+    return;
+  }
+  if (!meta.crops.length) {
+    showError("No crops are registered yet. Run: uv run python -m automl.registry");
+    return;
+  }
+  $("crop").innerHTML = meta.crops
+    .map((c) => `<option value="${c.crop}">${c.crop}</option>`).join("");
+  fillMarkets();
+  $("provenance").textContent =
+    `Data: ${meta.source}. Entity level: ${meta.entity_level}. `
+    + `${meta.n_weekly_rows} weekly rows spanning ${meta.data_start} to ${meta.data_end}. `
+    + `Prices in ${meta.price_unit}.`;
+  $("crop").addEventListener("change", () => { fillMarkets(); refresh(); });
+  $("market").addEventListener("change", refresh);
+  $("weeks").addEventListener("change", refresh);
+  $("refresh").addEventListener("click", refresh);
+  await refresh();
+}
+
+boot();
+</script>
 </body>
 </html>

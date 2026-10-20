@@ -5,10 +5,13 @@ onion price spike is a signal we want the model to see, not noise to be smoothed
 
 1. **Hard bounds.** A modal price outside ``clean.min_price`` .. ``clean.max_price``
    (rupees per quintal) is treated as a data-entry error and dropped.
-2. **Robust z-score.** Within one market, the log price is compared against that
-   market's median using the median absolute deviation (MAD). Points beyond
+2. **Robust z-score.** Within one crop-and-market series, the log price is compared
+   against that series' median using the median absolute deviation (MAD). Points beyond
    ``clean.outlier_log_mad_threshold`` MADs are *flagged* in an ``is_outlier`` column
    but kept, so the choice can be revisited without re-downloading anything.
+
+Every operation is scoped to a single (crop, market) series. Tomato in Bihar and onion
+in Gujarat are different price regimes and must never share a median.
 """
 
 from __future__ import annotations
@@ -27,34 +30,53 @@ MAD_TO_SIGMA = 1.4826
 
 
 def standardize_market_names(frame: pd.DataFrame) -> pd.DataFrame:
-    """Collapse whitespace and casing differences in the ``market`` column.
+    """Collapse whitespace and casing differences in the ``market`` and ``crop`` columns.
 
     Args:
-        frame: Daily records with a ``market`` column.
+        frame: Daily records with a ``market`` column, and optionally a ``crop`` column.
 
     Returns:
-        A copy whose market names are stripped and title-cased consistently.
+        A copy whose names are stripped and title-cased consistently.
     """
     out = frame.copy()
-    out["market"] = (
-        out["market"].astype("string").str.strip().str.replace(r"\s+", " ", regex=True).str.title()
-    )
+    for column in ("market", "crop"):
+        if column in out.columns:
+            out[column] = (
+                out[column]
+                .astype("string")
+                .str.strip()
+                .str.replace(r"\s+", " ", regex=True)
+                .str.title()
+            )
     return out
 
 
+def series_keys(frame: pd.DataFrame) -> list[str]:
+    """Return the columns that together identify one price series.
+
+    Args:
+        frame: Daily or weekly records.
+
+    Returns:
+        ``["crop", "market"]`` when a crop column is present, else ``["market"]``.
+    """
+    return ["crop", "market"] if "crop" in frame.columns else ["market"]
+
+
 def drop_duplicates(frame: pd.DataFrame) -> pd.DataFrame:
-    """Remove repeated (market, date) rows, keeping the first occurrence.
+    """Remove repeated (crop, market, date) rows, keeping the first occurrence.
 
     Args:
         frame: Daily records.
 
     Returns:
-        A copy with at most one row per market and date.
+        A copy with at most one row per series and date.
     """
     before = len(frame)
-    out = frame.drop_duplicates(subset=["market", "date"], keep="first").reset_index(drop=True)
+    subset = [*series_keys(frame), "date"]
+    out = frame.drop_duplicates(subset=subset, keep="first").reset_index(drop=True)
     if before != len(out):
-        LOGGER.info("dropped %d duplicate (market, date) rows", before - len(out))
+        LOGGER.info("dropped %d duplicate %s rows", before - len(out), tuple(subset))
     return out
 
 
@@ -78,10 +100,10 @@ def drop_implausible_prices(frame: pd.DataFrame, config: dict[str, Any]) -> pd.D
 
 
 def flag_outliers(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
-    """Flag per-market price outliers using a robust z-score on the log price.
+    """Flag per-series price outliers using a robust z-score on the log price.
 
     Args:
-        frame: Daily records with ``market`` and ``modal_price`` columns.
+        frame: Daily records with ``market``, optionally ``crop``, and ``modal_price``.
         config: Parsed ``configs/data.yaml``.
 
     Returns:
@@ -98,7 +120,9 @@ def flag_outliers(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
             return pd.Series(np.zeros(len(series)), index=series.index)
         return (series - median).abs() / (MAD_TO_SIGMA * mad)
 
-    scores = log_price.groupby(out["market"], observed=True).transform(_robust_z)
+    keys = series_keys(out)
+    grouper = [out[key] for key in keys]
+    scores = log_price.groupby(grouper, observed=True).transform(_robust_z)
     out["is_outlier"] = scores > threshold
     LOGGER.info(
         "flagged %d of %d rows as outliers (threshold %.1f MAD on log price)",
@@ -123,6 +147,10 @@ def clean_daily(frame: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     out = drop_duplicates(out)
     out = drop_implausible_prices(out, config)
     out = flag_outliers(out, config)
-    out = out.sort_values(["market", "date"], ignore_index=True)
-    LOGGER.info("cleaned frame: %d rows across %d markets", len(out), out["market"].nunique())
+    out = out.sort_values([*series_keys(out), "date"], ignore_index=True)
+    LOGGER.info(
+        "cleaned frame: %d rows across %d series",
+        len(out),
+        len(out.groupby(series_keys(out), observed=True)),
+    )
     return out

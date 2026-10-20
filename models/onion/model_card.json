@@ -1,13 +1,17 @@
 {
   "version": "1.0.0",
-  "created_utc": "2026-10-18T15:56:46+00:00",
-  "git_commit": "3cbe926",
-  "crop": "onion",
+  "created_utc": "2026-10-20T13:57:51+00:00",
+  "git_commit": "8d9d5a8",
+  "crop": "Onion",
+  "crop_slug": "onion",
   "entity_level": "state",
   "markets": [
     "Gujarat",
     "Karnataka",
-    "Maharashtra"
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Rajasthan",
+    "Uttar Pradesh"
   ],
   "train_start": "2018-01-08",
   "train_end": "2025-10-27",
@@ -15,19 +19,19 @@
   "test_end": "2025-10-27",
   "horizon_weeks": 1,
   "hyperparameters": {
-    "colsample_bytree": 0.7229606326118311,
-    "learning_rate": 0.005149211307814633,
-    "max_depth": 10,
-    "min_child_samples": 49,
-    "n_estimators": 120,
-    "num_leaves": 22,
-    "reg_lambda": 2.121737236348084,
-    "subsample": 0.6520517015921004
+    "colsample_bytree": 0.6262280373454243,
+    "learning_rate": 0.008061547258320065,
+    "max_depth": 4,
+    "min_child_samples": 60,
+    "n_estimators": 180,
+    "num_leaves": 85,
+    "reg_lambda": 0.003068946222718907,
+    "subsample": 0.9491933113957952
   },
   "metrics": {
-    "mae": 93.748,
-    "rmse": 114.622,
-    "mape": 6.677
+    "mae": 73.932,
+    "rmse": 96.065,
+    "mape": 5.917
   },
   "feature_names": [
     "market",
@@ -42,11 +46,12 @@
     "month",
     "season"
   ],
-  "n_train_rows": 1199,
+  "n_train_rows": 2402,
   "notes": "Metrics come from the held-out test block of the tuning window. The shipped model is then refitted on train+valid+test so it is as current as possible; those metrics are therefore out-of-sample for the tuning run but not for the shipped weights.",
   "extra": {
     "tuner": "custom GP Bayesian optimization",
     "budget": 15,
-    "seed": 0
+    "seed": 0,
+    "target_mode": "delta"
   }
 }

@@ -43,13 +43,18 @@ COPY --from=builder --chown=appuser:appuser /srv/.venv /srv/.venv
 COPY --chown=appuser:appuser src ./src
 COPY --chown=appuser:appuser app ./app
 COPY --chown=appuser:appuser configs ./configs
+# models/ carries the per-crop models, their cards, and weekly_snapshot.csv -- the
+# processed price table the API computes its answers from. The snapshot is CSV rather
+# than parquet so the runtime needs no pyarrow, which alone would add ~170 MB.
 COPY --chown=appuser:appuser models ./models
 
 USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "60", \
-     "--access-logfile", "-", "app.app:app"]
+# uvicorn directly: FastAPI is ASGI, and this image serves both the API and the UI
+# from one port, so there is no second process to supervise.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "2", "--access-log"]

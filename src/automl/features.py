@@ -10,7 +10,9 @@ be computable strictly before week ``T`` begins:
 - Calendar features describe week ``T`` itself, which is legitimate: the month and
   season of a future week are known today without observing any price.
 
-Everything is computed per market, so one market's history never bleeds into another's.
+Everything is computed per **series**, where a series is one crop in one market. Onion
+in Gujarat and tomato in Gujarat are separate histories, and a lag must never reach
+across either boundary.
 """
 
 from __future__ import annotations
@@ -49,6 +51,9 @@ PRICE_COLUMN = "modal_price"
 ANCHOR_COLUMN = "lag_1"
 #: Records how the model was parameterised, so serving never has to guess.
 MODE_COLUMN = "target_mode"
+#: Bookkeeping column naming the crop. Never a model input: a per-crop model sees a
+#: single constant value, so feeding it in would add a column of no information.
+CROP_COLUMN = "crop"
 
 
 def season_of_month(month: int) -> str:
@@ -84,6 +89,18 @@ def _validate_lags(lags: list[int], horizon: int) -> None:
         )
 
 
+def series_keys(frame: pd.DataFrame) -> list[str]:
+    """Return the columns that together identify one price series.
+
+    Args:
+        frame: A weekly or feature frame.
+
+    Returns:
+        ``["crop", "market"]`` when a crop column is present, else ``["market"]``.
+    """
+    return [CROP_COLUMN, "market"] if CROP_COLUMN in frame.columns else ["market"]
+
+
 def _add_feature_columns(weekly: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     """Attach every past-only feature column to a long weekly frame.
 
@@ -100,8 +117,9 @@ def _add_feature_columns(weekly: pd.DataFrame, config: dict[str, Any]) -> pd.Dat
     lags = [int(lag) for lag in config["lags_weeks"]]
     windows = [int(window) for window in config["rolling_mean_windows_weeks"]]
 
-    frame = weekly.sort_values(["market", "week_start"], ignore_index=True).copy()
-    grouped = frame.groupby("market", observed=True)[PRICE_COLUMN]
+    keys = series_keys(weekly)
+    frame = weekly.sort_values([*keys, "week_start"], ignore_index=True).copy()
+    grouped = frame.groupby(keys, observed=True)[PRICE_COLUMN]
 
     for lag in lags:
         frame[f"lag_{lag}"] = grouped.shift(lag)
@@ -142,15 +160,17 @@ def build_forecast_rows(weekly: pd.DataFrame, config: dict[str, Any]) -> pd.Data
         One row per market for the next unobserved week.
     """
     horizon = int(config["target"]["horizon_weeks"])
-    extended = weekly.sort_values(["market", "week_start"], ignore_index=True).copy()
+    keys = series_keys(weekly)
+    extended = weekly.sort_values([*keys, "week_start"], ignore_index=True).copy()
 
     future = []
-    for market, group in extended.groupby("market", observed=True):
+    for combo, group in extended.groupby(keys, observed=True):
+        combo = combo if isinstance(combo, tuple) else (combo,)
         last_week = group["week_start"].max()
         for step in range(1, horizon + 1):
             future.append(
                 {
-                    "market": market,
+                    **dict(zip(keys, combo, strict=True)),
                     "week_start": last_week + pd.Timedelta(weeks=step),
                     PRICE_COLUMN: np.nan,
                     "n_days": 0,
@@ -160,7 +180,7 @@ def build_forecast_rows(weekly: pd.DataFrame, config: dict[str, Any]) -> pd.Data
 
     built = _add_feature_columns(extended, config)
     built[MODE_COLUMN] = str(config["target"].get("mode", "level"))
-    horizon_week = built.groupby("market", observed=True)["week_start"].transform("max")
+    horizon_week = built.groupby(keys, observed=True)["week_start"].transform("max")
     rows = built[built["week_start"] == horizon_week].reset_index(drop=True)
     LOGGER.info("built %d forecast rows for week(s) after the last observation", len(rows))
     return rows
@@ -207,10 +227,10 @@ def build_features(weekly: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame
     frame = frame.dropna(subset=required).reset_index(drop=True)
 
     LOGGER.info(
-        "built %d feature rows, %d feature columns, %d markets",
+        "built %d feature rows, %d feature columns, %d series",
         len(frame),
         len(feature_columns(frame)),
-        frame["market"].nunique(),
+        len(frame.groupby(series_keys(frame), observed=True)),
     )
     return frame
 
@@ -228,6 +248,7 @@ def feature_columns(frame: pd.DataFrame) -> list[str]:
         TARGET_COLUMN,
         MODEL_TARGET_COLUMN,
         MODE_COLUMN,
+        CROP_COLUMN,
         PRICE_COLUMN,
         "week_start",
         "n_days",

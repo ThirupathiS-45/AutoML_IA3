@@ -170,6 +170,84 @@ def head_to_head(results: pd.DataFrame, reference: str = "cold_bo") -> pd.DataFr
     return frame.set_index("strategy").loc[order].reset_index()
 
 
+def paired_tests(results: pd.DataFrame) -> pd.DataFrame:
+    """Compare strategies pairwise on the runs they share, with a signed-rank test.
+
+    The strategies were run on identical seeds and identical windows, so each
+    (seed, window) is a *matched pair* rather than an independent sample. Comparing
+    group means throws that pairing away and inflates the apparent spread: the
+    standard deviations here are dominated by how hard each window is, which affects
+    every strategy equally. A paired test removes that shared difficulty and asks only
+    whether one strategy is consistently better on the same problem.
+
+    The Wilcoxon signed-rank test is used rather than a paired t-test because twenty
+    differences are too few to lean on a normality assumption.
+
+    Because several comparisons are made at once, the p-values also carry a
+    Holm-Bonferroni correction. Both columns are reported: the raw p-value, and
+    whether it survives correction. Reading only the raw column would overstate the
+    evidence.
+
+    Args:
+        results: The results table.
+
+    Returns:
+        One row per comparison, ordered by raw p-value.
+    """
+    from scipy.stats import wilcoxon
+
+    from automl.drift import holm_bonferroni
+
+    later = results[results["window_id"] > 1]
+    pivot = later.pivot_table(index=["seed", "window_id"], columns="strategy", values="mae")
+    comparisons = [
+        ("warm_bo_all", "cold_bo"),
+        ("warm_bo_all", "refit"),
+        ("warm_bo_all", "no_retrain"),
+        ("warm_bo_topk", "cold_bo"),
+        ("warm_bo_topk", "refit"),
+        ("cold_bo", "refit"),
+        ("refit", "no_retrain"),
+    ]
+    rows, raw = [], {}
+    for left, right in comparisons:
+        if left not in pivot.columns or right not in pivot.columns:
+            continue
+        difference = (pivot[left] - pivot[right]).dropna()
+        if len(difference) < 3:
+            continue
+        _, p_value = wilcoxon(difference)
+        label = f"{left} vs {right}"
+        raw[label] = float(p_value)
+        rows.append(
+            {
+                "comparison": label,
+                "n_pairs": int(len(difference)),
+                "wins": f"{int((difference < 0).sum())}/{len(difference)}",
+                "mean_mae_difference": round(float(difference.mean()), 2),
+                "median_mae_difference": round(float(difference.median()), 2),
+                "p_value": round(float(p_value), 4),
+            }
+        )
+    if not rows:
+        LOGGER.warning("not enough matched runs for a paired test")
+        return pd.DataFrame(
+            columns=[
+                "comparison",
+                "n_pairs",
+                "wins",
+                "mean_mae_difference",
+                "median_mae_difference",
+                "p_value",
+                "significant_after_holm",
+            ]
+        )
+    flags = holm_bonferroni(raw, alpha=0.05)
+    for row in rows:
+        row["significant_after_holm"] = bool(flags.get(row["comparison"], False))
+    return pd.DataFrame(rows).sort_values("p_value", ignore_index=True)
+
+
 def summarise_drift(results: pd.DataFrame) -> pd.DataFrame:
     """Report the drift verdict recorded at each window boundary.
 
@@ -291,6 +369,7 @@ def write_summary(results: pd.DataFrame, output: str | Path) -> Path:
     refit_mae = float(refit_row["mae_mean"].iloc[0]) if not refit_row.empty else float("nan")
     validation = summarise_validation(results)
     versus_cold = head_to_head(results, "cold_bo")
+    paired = paired_tests(results)
 
     warm_rows = to_target[to_target["strategy"].str.startswith("warm")]
     cold_trials = to_target.loc[to_target["strategy"] == "cold_bo", "median_trials_when_reached"]
@@ -333,6 +412,20 @@ def write_summary(results: pd.DataFrame, output: str | Path) -> Path:
         "",
         versus_cold.to_markdown(index=False),
         "",
+        "## Facts: paired significance tests",
+        "",
+        "Every strategy ran on the same seeds and the same windows, so each "
+        "(seed, window) is a matched pair. A paired signed-rank test removes the "
+        "shared difficulty of each window, which is what the large standard "
+        "deviations above are mostly measuring. `wins` counts the pairs where the "
+        "left strategy had the lower test MAE; a negative difference favours it.",
+        "",
+        paired.to_markdown(index=False),
+        "",
+        "Seven comparisons are made, so `significant_after_holm` is the column that "
+        "matters. A raw p-value below 0.05 that does not survive correction is "
+        "suggestive, not conclusive.",
+        "",
         "## Facts: trials needed to match the cold search's final validation score",
         "",
         "**Read `cold_bo` with care.** The target *is* the cold search's own final "
@@ -354,9 +447,11 @@ def write_summary(results: pd.DataFrame, output: str | Path) -> Path:
         f"- The plain refit baseline scored {refit_mae:.1f}.",
         warm_note,
         "",
-        "Standard deviations here are roughly a third of the means, and every "
-        "strategy's interval overlaps every other's. Treat the ordering as weak "
-        "evidence about this dataset and this budget, not as a general finding.",
+        "Unpaired standard deviations here are roughly a third of the means and every "
+        "strategy's interval overlaps every other's, which is why the paired table "
+        "above is the one to read: it removes the window-difficulty variance that "
+        "those intervals are mostly made of. Treat all of it as evidence about this "
+        "dataset and this budget, not as a general finding.",
         "",
     ]
     path = ensure_parent(output)

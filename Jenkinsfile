@@ -50,9 +50,14 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    test -f models/model.pkl || {
-                        echo "models/model.pkl is missing. Register a model before building:"
+                    test -f models/index.json || {
+                        echo "models/index.json is missing. Register models before building:"
                         echo "  uv run python -m automl.registry"
+                        exit 1
+                    }
+                    test -f data/processed/weekly.parquet || {
+                        echo "data/processed/weekly.parquet is missing. Build it first:"
+                        echo "  uv run python -m automl.data.aggregate"
                         exit 1
                     }
                     docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -t "${IMAGE_NAME}:latest" .
@@ -67,10 +72,10 @@ pipeline {
                     docker rm -f mandi-smoke >/dev/null 2>&1 || true
                     docker run -d --name mandi-smoke -p 18000:8000 "${IMAGE_NAME}:${IMAGE_TAG}"
                     for attempt in $(seq 1 30); do
-                        if curl -fsS http://127.0.0.1:18000/health; then break; fi
+                        if curl -fsS http://127.0.0.1:18000/api/health; then break; fi
                         sleep 2
                     done
-                    curl -fsS http://127.0.0.1:18000/health | grep -q '"status":"ok"'
+                    curl -fsS http://127.0.0.1:18000/api/health | grep -q '"status":"ok"'
                 '''
             }
             post {
@@ -131,7 +136,7 @@ pipeline {
                     sh '''
                         set -eu
                         for attempt in $(seq 1 30); do
-                            if curl -fsS "$APP_URL/health" | grep -q '"status":"ok"'; then
+                            if curl -fsS "$APP_URL/api/health" | grep -q '"status":"ok"'; then
                                 echo "deployment healthy"
                                 exit 0
                             fi

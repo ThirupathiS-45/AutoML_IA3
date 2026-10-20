@@ -118,3 +118,35 @@ def test_no_raw_price_column_leaks_into_the_feature_list(weekly_panel, features_
 def test_season_mapping_covers_every_month():
     seasons = {season_of_month(month) for month in range(1, 13)}
     assert seasons == {"winter", "summer", "monsoon", "post_monsoon"}
+
+
+def test_lags_never_cross_a_crop_boundary(features_config):
+    """A series is one crop in one market; onion's history must not leak into tomato's."""
+    import numpy as np
+
+    from automl.features import build_features
+
+    panel = make_weekly_panel(n_weeks=120, markets=("A",))
+    onion = panel.assign(crop="Onion")
+    tomato = panel.assign(crop="Tomato", modal_price=panel["modal_price"] + 5000.0)
+    both = pd.concat([onion, tomato], ignore_index=True)
+
+    built = build_features(both, features_config)
+    for crop, group in built.groupby("crop", observed=True):
+        source = both[both["crop"] == crop].set_index("week_start")["modal_price"].sort_index()
+        row = group.iloc[40]
+        for lag in features_config["lags_weeks"]:
+            expected = source.loc[row.week_start - pd.Timedelta(weeks=lag)]
+            assert row[f"lag_{lag}"] == pytest.approx(expected)
+    # And the two crops must not share a single feature value by accident.
+    pivot = built.pivot_table(index="week_start", columns="crop", values="lag_1")
+    assert not np.allclose(pivot["Onion"].dropna(), pivot["Tomato"].dropna())
+
+
+def test_crop_is_not_a_model_feature(features_config):
+    from automl.features import build_features, feature_columns
+
+    panel = make_weekly_panel(n_weeks=80, markets=("A",)).assign(crop="Onion")
+    built = build_features(panel, features_config)
+    assert "crop" in built.columns
+    assert "crop" not in feature_columns(built)

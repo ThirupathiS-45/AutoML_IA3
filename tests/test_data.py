@@ -6,7 +6,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from automl.data.aggregate import check_stop_rule, coverage_table, select_markets, to_weekly
+from automl.data.aggregate import (
+    check_stop_rule,
+    coverage_table,
+    select_markets,
+    to_weekly,
+)
 from automl.data.clean import clean_daily, drop_duplicates, flag_outliers, standardize_market_names
 
 CONFIG = {
@@ -146,11 +151,91 @@ def test_a_market_outside_the_tolerance_is_still_dropped():
 
 def test_stop_rule_fires_above_the_limit():
     coverage = pd.DataFrame({"market": ["Alpha", "Beta"], "missing_fraction": [0.02, 0.35]})
-    violations = check_stop_rule(coverage, ["Alpha", "Beta"], CONFIG)
+    selected = pd.DataFrame({"market": ["Alpha", "Beta"]})
+    violations = check_stop_rule(coverage, selected, CONFIG)
     assert len(violations) == 1
     assert "Beta" in violations[0]
 
 
 def test_stop_rule_passes_when_coverage_is_good():
     coverage = pd.DataFrame({"market": ["Alpha"], "missing_fraction": [0.01]})
-    assert check_stop_rule(coverage, ["Alpha"], CONFIG) == []
+    assert check_stop_rule(coverage, pd.DataFrame({"market": ["Alpha"]}), CONFIG) == []
+
+
+def test_stop_rule_ignores_series_that_were_not_kept():
+    coverage = pd.DataFrame({"market": ["Alpha", "Beta"], "missing_fraction": [0.01, 0.80]})
+    assert check_stop_rule(coverage, pd.DataFrame({"market": ["Alpha"]}), CONFIG) == []
+
+
+def test_crops_are_aggregated_independently():
+    """A weekly bucket must average one crop's days, never two crops' together."""
+    frame = daily_frame(120, markets=("Alpha",))
+    onion = frame.assign(crop="Onion")
+    tomato = frame.assign(crop="Tomato", modal_price=frame["modal_price"] * 3)
+    both = clean_daily(pd.concat([onion, tomato], ignore_index=True), CONFIG)
+    weekly = to_weekly(both, CONFIG)
+
+    assert set(weekly["crop"]) == {"Onion", "Tomato"}
+    pivot = weekly.pivot_table(index="week_start", columns="crop", values="modal_price")
+    ratio = (pivot["Tomato"] / pivot["Onion"]).dropna()
+    assert np.allclose(ratio, 3.0)
+
+
+def test_markets_are_selected_separately_for_each_crop():
+    config = {**CONFIG, "n_markets": 2, "coverage_tie_tolerance": 0.0}
+    frame = daily_frame(300)
+    onion = frame.assign(crop="Onion")
+    tomato = frame.assign(crop="Tomato")
+    onion = onion[~((onion["market"] == "Alpha") & (onion["date"] < "2022-06-01"))]
+    tomato = tomato[~((tomato["market"] == "Gamma") & (tomato["date"] < "2022-06-01"))]
+    both = clean_daily(pd.concat([onion, tomato], ignore_index=True), config)
+    selected, _ = select_markets(to_weekly(both, config), config)
+
+    kept = {crop: set(group["market"]) for crop, group in selected.groupby("crop", observed=True)}
+    assert "Alpha" not in kept["Onion"]
+    assert "Gamma" not in kept["Tomato"]
+    assert all(len(markets) == 2 for markets in kept.values())
+
+
+def test_violating_series_are_excluded_not_silently_kept():
+    """The stop rule must remove a badly covered series, not model it quietly."""
+    from automl.data.aggregate import drop_violating_series
+
+    config = {**CONFIG, "n_markets": 3}
+    frame = daily_frame(300)
+    # Starve Gamma so badly that it breaks the 10% missing limit.
+    frame = frame[~((frame["market"] == "Gamma") & (frame["date"] < "2022-10-01"))]
+    weekly = to_weekly(clean_daily(frame, config), config)
+    coverage = coverage_table(weekly)
+
+    kept, violations = drop_violating_series(weekly, coverage, config)
+    assert len(violations) == 1
+    assert "Gamma" in violations[0]
+    assert "Gamma" not in set(kept["market"])
+    assert {"Alpha", "Beta"} <= set(kept["market"])
+
+
+def test_a_clean_panel_triggers_no_exclusions():
+    from automl.data.aggregate import drop_violating_series
+
+    weekly = to_weekly(clean_daily(daily_frame(300), CONFIG), CONFIG)
+    kept, violations = drop_violating_series(weekly, coverage_table(weekly), CONFIG)
+    assert violations == []
+    assert len(kept) == len(weekly)
+
+
+def test_one_bad_crop_does_not_remove_a_good_one():
+    from automl.data.aggregate import drop_violating_series
+
+    config = {**CONFIG, "n_markets": 3}
+    frame = daily_frame(300)
+    onion = frame.assign(crop="Onion")
+    cabbage = frame.assign(crop="Cabbage")
+    cabbage = cabbage[cabbage["date"] > "2022-10-01"]  # badly covered on the shared grid
+    both = clean_daily(pd.concat([onion, cabbage], ignore_index=True), config)
+    weekly = to_weekly(both, config)
+
+    kept, violations = drop_violating_series(weekly, coverage_table(weekly), config)
+    assert violations, "the starved crop should have been flagged"
+    assert set(kept["crop"]) == {"Onion"}
+    assert kept["market"].nunique() == 3

@@ -1,0 +1,66 @@
+{
+  "updated_utc": "2026-10-20T13:57:58+00:00",
+  "git_commit": "8d9d5a8",
+  "crops": [
+    {
+      "crop": "Cabbage",
+      "slug": "cabbage",
+      "version": "1.0.0",
+      "markets": [
+        "Gujarat",
+        "Karnataka",
+        "Maharashtra",
+        "Rajasthan",
+        "Uttar Pradesh",
+        "West Bengal"
+      ],
+      "test_mae": 75.592,
+      "horizon_weeks": 1
+    },
+    {
+      "crop": "Onion",
+      "slug": "onion",
+      "version": "1.0.0",
+      "markets": [
+        "Gujarat",
+        "Karnataka",
+        "Madhya Pradesh",
+        "Maharashtra",
+        "Rajasthan",
+        "Uttar Pradesh"
+      ],
+      "test_mae": 73.932,
+      "horizon_weeks": 1
+    },
+    {
+      "crop": "Potato",
+      "slug": "potato",
+      "version": "1.0.0",
+      "markets": [
+        "Gujarat",
+        "Karnataka",
+        "Madhya Pradesh",
+        "Maharashtra",
+        "Rajasthan",
+        "Uttar Pradesh"
+      ],
+      "test_mae": 42.55,
+      "horizon_weeks": 1
+    },
+    {
+      "crop": "Tomato",
+      "slug": "tomato",
+      "version": "1.0.0",
+      "markets": [
+        "Gujarat",
+        "Karnataka",
+        "Maharashtra",
+        "Rajasthan",
+        "Uttar Pradesh",
+        "West Bengal"
+      ],
+      "test_mae": 201.097,
+      "horizon_weeks": 1
+    }
+  ]
+}

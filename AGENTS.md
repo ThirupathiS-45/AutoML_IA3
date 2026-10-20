@@ -340,6 +340,35 @@ required reporting that plainly, and `README.md` does. The one warm-start advant
 convergence speed: a median of 4 trials to reach cold's final validation score versus
 cold's 11, but only in 9 of 20 runs.
 
+### Later changes, requested by the user on 2026-10-20
+
+These came after the spec above was satisfied, and widen it rather than correct it.
+
+9. **Four crops, not one.** Onion, Potato, Tomato and Cabbage. The spec's single-crop
+   scope was a deliberate narrowing, not a data limit — the portal exposes 453
+   commodities. `configs/data.yaml` now drives this; adding a crop is a config change.
+10. **Eight states, not three.** `n_markets: 6` per crop, selected independently for
+    each crop from eight candidates.
+11. **One model per crop.** `models/<slug>/model.pkl` plus a card and serving rows
+    each, with `models/index.json` as the registry the API reads. Prices differ by an
+    order of magnitude between crops, so separate models stay interpretable.
+12. **FastAPI replaces Flask.** `app/main.py` holds the routes, `app/service.py` the
+    live data and model access, `app/cli.py` the `web-start` entry point. Routes moved
+    under `/api/*`, so the health check is now `/api/health`. `/docs` comes free.
+13. **`uv run web-start` starts everything.** Backend and frontend are one uvicorn
+    process on one port: FastAPI serves both the JSON API and the page that consumes
+    it. No CORS, no Node, no second server. The command runs preflight checks and
+    prints the exact fix for anything missing.
+14. **Nothing on the page is pre-written.** Every figure is computed per request from
+    the dataset on disk. `/api/backtest` re-runs the registered model across recent
+    weeks and scores it against the naive forecast on the same rows, so the page
+    reports honestly whether the model is beating the baseline for that selection.
+    The service reloads data and models automatically when the files change.
+15. **The container carries `models/weekly_snapshot.csv`, not a parquet.** The API
+    computes from the dataset at request time, and shipping it as CSV keeps `pyarrow`
+    (~170 MB) out of the runtime image.
+16. **Docker runs uvicorn**, not gunicorn, since FastAPI is ASGI.
+
 ### Definition of Done — verified 2026-10-20
 
 Checked against a genuine `git clone` of this repository into an empty directory, with

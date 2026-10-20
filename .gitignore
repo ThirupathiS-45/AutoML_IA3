@@ -11,13 +11,12 @@ data/processed/*
 *.key
 credentials.json
 
-# Trained artifacts. models/model.pkl, models/model_card.json and
-# models/serving_features.pkl ARE committed: the Docker image is built from a
-# git checkout and the app needs them to serve. Other experiment pickles are not.
+# Trained artefacts. The per-crop models under models/<crop>/ ARE committed, along
+# with models/index.json and models/weekly_snapshot.csv: the Docker image is built
+# from a git checkout and the app needs all three to serve. Stray experiment pickles
+# dropped at the models/ root are not.
 models/*.pkl
 models/*.joblib
-!models/model.pkl
-!models/serving_features.pkl
 
 # Python
 __pycache__/

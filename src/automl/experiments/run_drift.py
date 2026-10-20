@@ -138,16 +138,19 @@ def _drift_record(setup: Setup, previous: Window, current: Window, alpha: float)
     return detect_input_drift(reference, live, columns=numeric, alpha=alpha).as_record()
 
 
-def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
-    """Execute the full drift experiment.
+def run(
+    config_path: str | Path = "configs/experiment.yaml", crop: str | None = None
+) -> pd.DataFrame:
+    """Execute the full drift experiment for one crop.
 
     Args:
         config_path: Path to ``configs/experiment.yaml``.
+        crop: Crop to run on. ``None`` uses the first crop in the data config.
 
     Returns:
         The long results table, one row per (seed, window, strategy).
     """
-    setup = build_setup(experiment_config_path=config_path)
+    setup = build_setup(crop=crop, experiment_config_path=config_path)
     config = setup.experiment_config
     space = SearchSpace.from_config(setup.search_space_config)
 
@@ -158,6 +161,10 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
     error_margin = float(config["drift"].get("error_rise_margin", 0.10))
     seeds = [int(seed) for seed in config["seeds"]]
     history_dir = ensure_parent(Path(config["paths"]["history_dir"]) / "placeholder").parent
+
+    crop_label = setup.crop or str(setup.data_config["crops"][0]["name"])
+    tag = crop_label.lower().replace(" ", "_")
+    LOGGER.info("drift experiment for %s over markets %s", crop_label, setup.markets)
 
     rows: list[dict[str, Any]] = []
     traces: list[dict[str, Any]] = []
@@ -170,7 +177,7 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
         base_history, base_seconds, base_trace = _run_search(
             setup, space, first, seed, budget, n_initial_random, COLD, None, top_k
         )
-        base_history.save(history_dir / f"seed{seed}_window1_cold.json", space.names)
+        base_history.save(history_dir / f"{tag}_seed{seed}_window1_cold.json", space.names)
         best_trial = base_history.best()
         assert best_trial is not None
         deployed_params = dict(best_trial.params)
@@ -180,6 +187,7 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
             traces.append({"seed": seed, "window_id": 1, "strategy": "cold_bo", **row})
         rows.append(
             {
+                "crop": crop_label,
                 "seed": seed,
                 "window_id": 1,
                 "strategy": "cold_bo",
@@ -221,13 +229,14 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
                 setup, space, window, seed, budget, n_initial_random, COLD, None, top_k
             )
             cold_history.save(
-                history_dir / f"seed{seed}_window{window.window_id}_cold.json", space.names
+                history_dir / f"{tag}_seed{seed}_w{window.window_id}_cold.json", space.names
             )
             cold_target = cold_history.best_score()
 
             # --- strategies that spend no trials -----------------------------
             rows.append(
                 {
+                    "crop": crop_label,
                     "seed": seed,
                     "window_id": window.window_id,
                     "strategy": "no_retrain",
@@ -245,6 +254,7 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
             refit_metrics = evaluate_on_test(setup.features, window, deployed_params, seed)
             rows.append(
                 {
+                    "crop": crop_label,
                     "seed": seed,
                     "window_id": window.window_id,
                     "strategy": "refit",
@@ -268,6 +278,7 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
                 )
             rows.append(
                 {
+                    "crop": crop_label,
                     "seed": seed,
                     "window_id": window.window_id,
                     "strategy": "cold_bo",
@@ -288,7 +299,7 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
                     setup, space, window, seed, budget, n_initial_random, mode, prior, top_k
                 )
                 warm_history.save(
-                    history_dir / f"seed{seed}_window{window.window_id}_{name}.json", space.names
+                    history_dir / f"{tag}_seed{seed}_w{window.window_id}_{name}.json", space.names
                 )
                 warm_best = warm_history.best()
                 assert warm_best is not None
@@ -301,6 +312,7 @@ def run(config_path: str | Path = "configs/experiment.yaml") -> pd.DataFrame:
                     )
                 rows.append(
                     {
+                        "crop": crop_label,
                         "seed": seed,
                         "window_id": window.window_id,
                         "strategy": name,
@@ -334,9 +346,10 @@ def main() -> None:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/experiment.yaml")
+    parser.add_argument("--crop", default=None, help="defaults to the first configured crop")
     args = parser.parse_args()
     setup_logging()
-    run(args.config)
+    run(args.config, args.crop)
 
 
 if __name__ == "__main__":

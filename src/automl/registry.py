@@ -4,9 +4,13 @@ A pickle on its own is an unlabelled jar. The card next to it records what the m
 was trained on, how well it scored, which commit produced it and when -- enough that
 somebody finding ``model.pkl`` six months from now can tell whether to trust it.
 
+One model is registered per crop, each in its own directory under ``models/``, plus an
+``index.json`` the web API reads to discover what is available.
+
 Run with::
 
-    uv run python -m automl.registry --window -1
+    uv run python -m automl.registry                 # every configured crop
+    uv run python -m automl.registry --crop Onion    # just one
 """
 
 from __future__ import annotations
@@ -23,20 +27,72 @@ from typing import Any
 import joblib
 import pandas as pd
 
-from automl.config import ensure_parent, resolve_path, setup_logging
+from automl.config import ensure_parent, load_config, resolve_path, setup_logging
 from automl.evaluate import evaluate_on_test
 from automl.features import build_forecast_rows, feature_columns, split_xy
 from automl.models.lgbm import fit
-from automl.pipeline import build_setup, load_weekly
+from automl.pipeline import build_setup, crop_names, crop_slug, load_weekly
 from automl.split import Window, slice_window
 from automl.tuner.bo_tuner import BOTuner
 from automl.tuner.space import SearchSpace
 
 LOGGER = logging.getLogger(__name__)
 
-MODEL_PATH = "models/model.pkl"
-CARD_PATH = "models/model_card.json"
-SERVING_PATH = "models/serving_features.pkl"
+MODELS_DIR = "models"
+INDEX_PATH = "models/index.json"
+SNAPSHOT_PATH = "models/weekly_snapshot.csv"
+
+MODEL_FILE = "model.pkl"
+CARD_FILE = "model_card.json"
+SERVING_FILE = "serving_features.pkl"
+
+
+def crop_dir(slug: str) -> Path:
+    """Return the directory holding one crop's artefacts.
+
+    Args:
+        slug: Crop slug, as configured in ``configs/data.yaml``.
+
+    Returns:
+        The resolved directory path. Nothing is created.
+    """
+    return resolve_path(MODELS_DIR) / slug
+
+
+def model_path(slug: str) -> Path:
+    """Path of one crop's pickled model.
+
+    Args:
+        slug: Crop slug.
+
+    Returns:
+        The resolved path.
+    """
+    return crop_dir(slug) / MODEL_FILE
+
+
+def card_path(slug: str) -> Path:
+    """Path of one crop's model card.
+
+    Args:
+        slug: Crop slug.
+
+    Returns:
+        The resolved path.
+    """
+    return crop_dir(slug) / CARD_FILE
+
+
+def serving_path(slug: str) -> Path:
+    """Path of one crop's serving rows.
+
+    Args:
+        slug: Crop slug.
+
+    Returns:
+        The resolved path.
+    """
+    return crop_dir(slug) / SERVING_FILE
 
 
 @dataclass
@@ -48,6 +104,7 @@ class ModelCard:
         created_utc: When the model was saved.
         git_commit: Short commit hash of the code that produced it.
         crop: The commodity modelled.
+        crop_slug: Filesystem slug for the commodity.
         entity_level: Whether rows are mandis, districts or states.
         markets: The market names the model was trained on.
         train_start: First training week.
@@ -66,6 +123,7 @@ class ModelCard:
     created_utc: str
     git_commit: str
     crop: str
+    crop_slug: str
     entity_level: str
     markets: list[str]
     train_start: str
@@ -103,8 +161,8 @@ def git_commit() -> str:
 def save_model(
     model: Any,
     card: ModelCard,
-    model_path: str | Path = MODEL_PATH,
-    card_path: str | Path = CARD_PATH,
+    model_path: str | Path,
+    card_path: str | Path,
 ) -> tuple[Path, Path]:
     """Write the model and its card to disk.
 
@@ -158,7 +216,7 @@ def _to_numpy_backed(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def save_serving_features(rows: pd.DataFrame, path: str | Path = SERVING_PATH) -> Path:
+def save_serving_features(rows: pd.DataFrame, path: str | Path) -> Path:
     """Store one forecast row per market, for the web app to serve.
 
     The app must be able to answer "what is next week's price?" without shipping the
@@ -180,7 +238,7 @@ def save_serving_features(rows: pd.DataFrame, path: str | Path = SERVING_PATH) -
     return resolved
 
 
-def load_serving_features(path: str | Path = SERVING_PATH) -> pd.DataFrame:
+def load_serving_features(path: str | Path) -> pd.DataFrame:
     """Load the per-market serving rows saved alongside the model.
 
     Args:
@@ -198,7 +256,7 @@ def load_serving_features(path: str | Path = SERVING_PATH) -> pd.DataFrame:
     return joblib.load(resolved)
 
 
-def load_model(model_path: str | Path = MODEL_PATH) -> Any:
+def load_model(model_path: str | Path) -> Any:
     """Load the pickled production model.
 
     Args:
@@ -216,7 +274,7 @@ def load_model(model_path: str | Path = MODEL_PATH) -> Any:
     return joblib.load(resolved)
 
 
-def load_card(card_path: str | Path = CARD_PATH) -> dict[str, Any]:
+def load_card(card_path: str | Path) -> dict[str, Any]:
     """Load the model card.
 
     Args:
@@ -234,16 +292,16 @@ def load_card(card_path: str | Path = CARD_PATH) -> dict[str, Any]:
     return json.loads(resolved.read_text(encoding="utf-8"))
 
 
-def register_best_model(
-    window_index: int = -1,
+def register_crop(
+    crop: str,
     seed: int = 0,
     budget: int | None = None,
-    version: str = "0.1.0",
+    version: str = "1.0.0",
 ) -> ModelCard:
-    """Tune on the chosen window, fit the winner on all available data and save it.
+    """Tune one crop on its most recent window, fit the winner on all data, save it.
 
     Args:
-        window_index: Which window to tune on. ``-1`` means the most recent.
+        crop: Crop display name, as listed in ``configs/data.yaml``.
         seed: Random seed.
         budget: Trial budget. Defaults to the experiment config's value.
         version: Version string recorded in the card.
@@ -251,16 +309,20 @@ def register_best_model(
     Returns:
         The model card that was written.
     """
-    setup = build_setup()
-    window: Window = setup.windows[window_index]
+    from automl.evaluate import make_objective
+
+    setup = build_setup(crop=crop)
+    slug = crop_slug(setup.data_config, crop)
+    window: Window = setup.windows[-1]
     space = SearchSpace.from_config(setup.search_space_config)
     trials = budget or int(setup.experiment_config["budget"]["trials"])
     n_initial = int(setup.experiment_config["budget"]["n_initial_random"])
 
-    from automl.evaluate import make_objective
-
     tuner = BOTuner(
-        space, make_objective(setup.features, window, seed), seed=seed, n_initial_random=n_initial
+        space,
+        make_objective(setup.features, window, seed),
+        seed=seed,
+        n_initial_random=n_initial,
     )
     history = tuner.run(budget=trials, window_id=window.window_id)
     best = history.best()
@@ -269,10 +331,8 @@ def register_best_model(
 
     metrics = evaluate_on_test(setup.features, window, params, seed)
 
-    train = slice_window(setup.features, window, "train")
-    valid = slice_window(setup.features, window, "valid")
-    test = slice_window(setup.features, window, "test")
-    everything = pd.concat([train, valid, test], ignore_index=True)
+    blocks = [slice_window(setup.features, window, part) for part in ("train", "valid", "test")]
+    everything = pd.concat(blocks, ignore_index=True)
     x_all, y_all = split_xy(everything)
     model = fit(params, x_all, y_all, seed)
 
@@ -280,9 +340,10 @@ def register_best_model(
         version=version,
         created_utc=datetime.now(UTC).isoformat(timespec="seconds"),
         git_commit=git_commit(),
-        crop=str(setup.data_config["crop"]),
+        crop=crop,
+        crop_slug=slug,
         entity_level=str(setup.data_config["source"]["entity_level"]),
-        markets=sorted(str(name) for name in setup.features["market"].unique()),
+        markets=setup.markets,
         train_start=str(window.train_start.date()),
         train_end=str(window.test_end.date()),
         test_start=str(window.test_start.date()),
@@ -298,25 +359,140 @@ def register_best_model(
             "as possible; those metrics are therefore out-of-sample for the tuning "
             "run but not for the shipped weights."
         ),
-        extra={"tuner": "custom GP Bayesian optimization", "budget": trials, "seed": seed},
+        extra={
+            "tuner": "custom GP Bayesian optimization",
+            "budget": trials,
+            "seed": seed,
+            "target_mode": str(setup.features_config["target"].get("mode", "level")),
+        },
     )
-    save_model(model, card)
+    save_model(model, card, model_path(slug), card_path(slug))
+
     weekly = load_weekly(setup.data_config)
-    save_serving_features(build_forecast_rows(weekly, setup.features_config))
+    if "crop" in weekly.columns:
+        weekly = weekly[weekly["crop"].astype(str).str.lower() == crop.lower()]
+    save_serving_features(
+        build_forecast_rows(weekly.reset_index(drop=True), setup.features_config),
+        serving_path(slug),
+    )
     return card
+
+
+def write_index(cards: list[ModelCard]) -> Path:
+    """Write the registry index the web API reads to discover available crops.
+
+    Args:
+        cards: One card per registered crop.
+
+    Returns:
+        The path written to.
+    """
+    path = ensure_parent(INDEX_PATH)
+    payload = {
+        "updated_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        "git_commit": git_commit(),
+        "crops": [
+            {
+                "crop": card.crop,
+                "slug": card.crop_slug,
+                "version": card.version,
+                "markets": card.markets,
+                "test_mae": card.metrics.get("mae"),
+                "horizon_weeks": card.horizon_weeks,
+            }
+            for card in sorted(cards, key=lambda c: c.crop)
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    LOGGER.info("registry index written to %s (%d crops)", path, len(cards))
+    return path
+
+
+def write_weekly_snapshot(weekly: pd.DataFrame, path: str | Path = SNAPSHOT_PATH) -> Path:
+    """Ship the processed weekly price table alongside the models.
+
+    The API computes every answer from this table at request time. It travels as CSV
+    rather than parquet so the runtime image needs no pyarrow, which alone would add
+    about 170 MB for a dependency the app would otherwise never call.
+
+    Args:
+        weekly: The processed weekly frame.
+        path: Destination CSV path.
+
+    Returns:
+        The path written to.
+    """
+    resolved = ensure_parent(path)
+    columns = [c for c in ("crop", "market", "week_start", "modal_price", "n_days") if c in weekly]
+    weekly[columns].to_csv(resolved, index=False)
+    LOGGER.info("weekly snapshot written to %s (%d rows)", resolved, len(weekly))
+    return resolved
+
+
+def load_index(path: str | Path = INDEX_PATH) -> dict[str, Any]:
+    """Read the registry index.
+
+    Args:
+        path: Path to ``models/index.json``.
+
+    Returns:
+        The index contents.
+
+    Raises:
+        FileNotFoundError: If no crop has been registered yet.
+    """
+    resolved = resolve_path(path)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"{resolved} not found. Run: uv run python -m automl.registry")
+    return json.loads(resolved.read_text(encoding="utf-8"))
+
+
+def register_all(
+    crops: list[str] | None = None,
+    seed: int = 0,
+    budget: int | None = None,
+    version: str = "1.0.0",
+) -> list[ModelCard]:
+    """Register a model for every configured crop and write the index.
+
+    Args:
+        crops: Crop names to register. Defaults to every crop in the data config.
+        seed: Random seed.
+        budget: Trial budget per crop.
+        version: Version string recorded in each card.
+
+    Returns:
+        The cards that were written. A crop that fails is logged and skipped so one
+        bad series cannot block the rest of the registry.
+    """
+    data_config = load_config("configs/data.yaml")
+    wanted = crops or crop_names(data_config)
+    cards: list[ModelCard] = []
+    for crop in wanted:
+        LOGGER.info("=" * 60)
+        LOGGER.info("registering %s", crop)
+        try:
+            cards.append(register_crop(crop, seed=seed, budget=budget, version=version))
+        except Exception:
+            LOGGER.exception("could not register %s; skipping it", crop)
+    if cards:
+        write_index(cards)
+        write_weekly_snapshot(load_weekly(data_config))
+    return cards
 
 
 def main() -> None:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--window", type=int, default=-1)
+    parser.add_argument("--crop", action="append", help="repeatable; defaults to all crops")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--budget", type=int, default=None)
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", default="1.0.0")
     args = parser.parse_args()
     setup_logging()
-    card = register_best_model(args.window, args.seed, args.budget, args.version)
-    print(json.dumps(asdict(card), indent=2, default=str))
+    cards = register_all(args.crop, args.seed, args.budget, args.version)
+    for card in cards:
+        print(f"{card.crop:10s} v{card.version}  test MAE {card.metrics['mae']:8.2f}")
 
 
 if __name__ == "__main__":

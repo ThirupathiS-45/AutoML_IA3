@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from automl.features import (
@@ -16,6 +17,7 @@ from automl.features import (
 )
 from automl.models.lgbm import default_params, fit
 from automl.registry import (
+    SNAPSHOT_PATH,
     ModelCard,
     git_commit,
     load_card,
@@ -57,7 +59,8 @@ def card():
         version="0.0.1",
         created_utc="2026-01-01T00:00:00+00:00",
         git_commit="deadbee",
-        crop="onion",
+        crop="Onion",
+        crop_slug="onion",
         entity_level="state",
         markets=["A", "B"],
         train_start="2019-01-07",
@@ -85,11 +88,11 @@ def test_model_round_trips_through_disk(tmp_path, features, card):
 def test_card_is_valid_json_with_the_expected_keys(tmp_path, features, card):
     x, y = split_xy(features)
     model = fit(default_params(), x, y, seed=0)
-    _, card_path = save_model(model, card, tmp_path / "m.pkl", tmp_path / "c.json")
-    payload = json.loads(card_path.read_text())
+    _, saved_card = save_model(model, card, tmp_path / "m.pkl", tmp_path / "c.json")
+    payload = json.loads(saved_card.read_text())
     for key in ("version", "git_commit", "created_utc", "hyperparameters", "metrics"):
         assert key in payload
-    assert load_card(card_path)["version"] == "0.0.1"
+    assert load_card(saved_card)["version"] == "0.0.1"
 
 
 def test_serving_rows_cover_every_market_once(tmp_path, forecast_rows):
@@ -158,3 +161,31 @@ def test_missing_artifacts_raise_a_useful_error(tmp_path):
 def test_git_commit_returns_a_string():
     commit = git_commit()
     assert isinstance(commit, str) and commit
+
+
+def test_crop_paths_are_namespaced_by_slug():
+    from automl.registry import card_path, crop_dir, model_path, serving_path
+
+    assert crop_dir("tomato").name == "tomato"
+    assert model_path("tomato").parent.name == "tomato"
+    assert card_path("tomato").name == "model_card.json"
+    assert serving_path("tomato").name == "serving_features.pkl"
+    assert model_path("onion") != model_path("tomato")
+
+
+def test_weekly_snapshot_is_csv_and_pyarrow_free(tmp_path):
+    """The container reads this snapshot and has no parquet engine installed."""
+    from automl.registry import write_weekly_snapshot
+
+    weekly = make_weekly_panel(n_weeks=30, markets=("A", "B")).assign(crop="Onion")
+    path = write_weekly_snapshot(weekly, tmp_path / "snap.csv")
+    assert path.suffix == ".csv"
+    text = path.read_text()
+    assert "pyarrow" not in text
+    reloaded = pd.read_csv(path, parse_dates=["week_start"])
+    assert set(reloaded.columns) == {"crop", "market", "week_start", "modal_price", "n_days"}
+    assert len(reloaded) == len(weekly)
+
+
+def test_snapshot_default_path_sits_with_the_models():
+    assert SNAPSHOT_PATH.startswith("models/")

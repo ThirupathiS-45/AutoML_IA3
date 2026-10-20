@@ -179,6 +179,7 @@ def run(
     seeds: list[int],
     window_index: int,
     output: str | Path,
+    crop: str | None = None,
 ) -> pd.DataFrame:
     """Time the batch search at several worker counts and write the results CSV.
 
@@ -188,11 +189,12 @@ def run(
         seeds: Random seeds to repeat over.
         window_index: Zero-based index of the window to tune on.
         output: Destination CSV path.
+        crop: Crop to tune on. ``None`` uses the first configured crop.
 
     Returns:
         The timing table, including the speed-up relative to a single worker.
     """
-    setup = build_setup()
+    setup = build_setup(crop=crop)
     space = SearchSpace.from_config(setup.search_space_config)
     window = setup.windows[window_index]
 
@@ -229,6 +231,7 @@ def main() -> None:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/experiment.yaml")
+    parser.add_argument("--crop", default=None, help="defaults to the first configured crop")
     parser.add_argument("--workers", type=int, nargs="+", default=[1, 2, 4])
     parser.add_argument("--budget", type=int, default=16)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
@@ -236,7 +239,7 @@ def main() -> None:
     parser.add_argument("--output", default="results/parallel.csv")
     args = parser.parse_args()
     setup_logging()
-    table = run(args.workers, args.budget, args.seeds, args.window, args.output)
+    table = run(args.workers, args.budget, args.seeds, args.window, args.output, args.crop)
     print(table.to_string(index=False))
 
 
