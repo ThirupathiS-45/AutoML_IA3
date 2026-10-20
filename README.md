@@ -238,111 +238,125 @@ random search is close to competitive — which is worth stating rather than hid
 
 ### Phase 5: the drift experiment (core result)
 
-Onion, 5 strategies x 4 post-drift windows x 5 seeds, 15 trials per search, 6 states.
+**All four crops**, 5 strategies x 4 post-drift windows x 5 seeds = 80 matched runs per
+strategy, 15 trials per search, 6 states each.
 
 | strategy     |   mae_mean |   mae_std |   rmse_mean |   rmse_std |   mape_mean |   trials_mean |   seconds_mean |   n_runs |
 |:-------------|-----------:|----------:|------------:|-----------:|------------:|--------------:|---------------:|---------:|
-| no_retrain   |     144.45 |     45.49 |      210.67 |      76.27 |        7.01 |             0 |           0    |       20 |
-| refit        |     137.9  |     37.74 |      204.82 |      69.36 |        6.84 |             0 |           0.07 |       20 |
-| cold_bo      |     135.63 |     38.01 |      202.28 |      72.3  |        6.7  |            15 |           2.49 |       20 |
-| warm_bo_all  |     131.04 |     37.04 |      195.22 |      70.96 |        6.6  |            15 |           7.14 |       20 |
-| warm_bo_topk |     132.4  |     37.87 |      198.1  |      73.3  |        6.61 |            15 |           2.68 |       20 |
+| no_retrain   |     129.05 |     70.41 |      187.34 |      97.28 |        6.82 |             0 |           0    |       80 |
+| refit        |     129.52 |     74.44 |      187.85 |      99.93 |        6.91 |             0 |           0.1  |       80 |
+| cold_bo      |     129.29 |     71.29 |      187.43 |      97.08 |        6.91 |            15 |           2.37 |       80 |
+| warm_bo_all  |     127.5  |     71.27 |      185.26 |      96.96 |        6.85 |            15 |           4.69 |       80 |
+| warm_bo_topk |     127.76 |     70.79 |      185.94 |      96.87 |        6.85 |            15 |           2.49 |       80 |
 
-Validation error reached by each search — the quantity the tuner actually optimises:
+#### Split by crop, before any pooling
 
-| strategy     |   mean |   std |   count |
-|:-------------|-------:|------:|--------:|
-| cold_bo      | 121.82 | 41.43 |      20 |
-| warm_bo_all  | 123.79 | 42.04 |      20 |
-| warm_bo_topk | 121.93 | 41.26 |      20 |
+Pooling hides disagreement, and here the crops genuinely disagree:
 
-Mean test MAE per window:
+| crop    |   no_retrain |   refit |   cold_bo |   warm_bo_all |   warm_bo_topk | best        |
+|:--------|-------------:|--------:|----------:|--------------:|---------------:|:------------|
+| Cabbage |         92.8 |    92.7 |      94.5 |          94.4 |           93.3 | refit       |
+| Onion   |        144.5 |   137.9 |     135.6 |         131   |          132.4 | warm_bo_all |
+| Potato  |         69.8 |    70   |      71.2 |          71.3 |           71.4 | no_retrain  |
+| Tomato  |        209.2 |   217.6 |     215.9 |         213.2 |          213.9 | no_retrain  |
 
-|   window_id |   no_retrain |   refit |   cold_bo |   warm_bo_all |   warm_bo_topk |
-|------------:|-------------:|--------:|----------:|--------------:|---------------:|
-|           1 |        nan   |   nan   |      59.7 |         nan   |          nan   |
-|           2 |        168.6 |   167.3 |     171.9 |         170.3 |          170   |
-|           3 |        151.1 |   142.3 |     138.3 |         134.2 |          129.6 |
-|           4 |        184.7 |   164.4 |     157   |         146.5 |          155.6 |
-|           5 |         73.4 |    77.6 |      75.3 |          73.1 |           74.4 |
+Warm start against a plain refit, tested separately within each crop:
 
-Head-to-head against the cold search, run by run:
+| crop    |   n_pairs | warm_bo_all_wins   |   mean_mae_difference |   p_value | favours     | significant_after_holm   |
+|:--------|----------:|:-------------------|----------------------:|----------:|:------------|:-------------------------|
+| Onion   |        20 | 14/20              |                 -6.86 |    0.0266 | warm_bo_all | False                    |
+| Tomato  |        20 | 14/20              |                 -4.3  |    0.0826 | warm_bo_all | False                    |
+| Potato  |        20 | 8/20               |                  1.39 |    0.1893 | refit       | False                    |
+| Cabbage |        20 | 9/20               |                  1.71 |    0.2774 | refit       | False                    |
 
-| strategy     | beat_cold_bo   |   mean_mae_difference |
-|:-------------|:---------------|----------------------:|
-| no_retrain   | 8/20           |                  8.82 |
-| refit        | 8/20           |                  2.27 |
-| warm_bo_all  | 14/20          |                 -4.59 |
-| warm_bo_topk | 12/20          |                 -3.23 |
+#### Paired significance tests, pooled over all four crops
 
-#### Paired significance tests
-
-Every strategy ran on the same seeds and the same windows, so each (seed, window) is a
-**matched pair**. The unpaired standard deviations above are dominated by how hard each
-window is, which affects all strategies equally; a paired signed-rank test removes that.
+Each (crop, seed, window) is a **matched pair** — every strategy saw exactly the same
+problem. A paired signed-rank test removes the shared difficulty of each crop and
+window, which is what the enormous unpaired standard deviations above are mostly
+measuring. `wins` counts the pairs where the left strategy had the lower test MAE.
 
 | comparison                |   n_pairs | wins   |   mean_mae_difference |   median_mae_difference |   p_value | significant_after_holm   |
 |:--------------------------|----------:|:-------|----------------------:|------------------------:|----------:|:-------------------------|
-| warm_bo_all vs cold_bo    |        20 | 14/20  |                 -4.59 |                   -3.45 |    0.0266 | False                    |
-| warm_bo_all vs refit      |        20 | 14/20  |                 -6.86 |                   -4.83 |    0.0266 | False                    |
-| warm_bo_all vs no_retrain |        20 | 12/20  |                -13.41 |                   -4.4  |    0.04   | False                    |
-| warm_bo_topk vs refit     |        20 | 12/20  |                 -5.5  |                   -6.21 |    0.0583 | False                    |
-| refit vs no_retrain       |        20 | 13/20  |                 -6.55 |                   -1.48 |    0.1231 | False                    |
-| warm_bo_topk vs cold_bo   |        20 | 12/20  |                 -3.23 |                   -2.28 |    0.1536 | False                    |
-| cold_bo vs refit          |        20 | 11/20  |                 -2.27 |                   -0.88 |    0.4445 | False                    |
+| cold_bo vs no_retrain     |        80 | 28/80  |                  0.24 |                    1.31 |    0.0146 | False                    |
+| warm_bo_all vs cold_bo    |        80 | 48/80  |                 -1.79 |                   -0.46 |    0.0392 | False                    |
+| warm_bo_topk vs cold_bo   |        80 | 46/80  |                 -1.53 |                   -0.98 |    0.0436 | False                    |
+| warm_bo_all vs refit      |        80 | 45/80  |                 -2.02 |                   -0.37 |    0.1515 | False                    |
+| warm_bo_all vs no_retrain |        80 | 33/80  |                 -1.55 |                    0.94 |    0.4176 | False                    |
+| cold_bo vs refit          |        80 | 35/80  |                 -0.22 |                    0.49 |    0.5    | False                    |
+| refit vs no_retrain       |        80 | 39/80  |                  0.47 |                    0.14 |    0.5019 | False                    |
+
+Validation error reached by each search — the quantity the tuner actually optimises:
+
+| strategy     |   mean |    std |   count |
+|:-------------|-------:|-------:|--------:|
+| cold_bo      | 141.33 | 113.73 |      80 |
+| warm_bo_all  | 142.84 | 115.51 |      80 |
+| warm_bo_topk | 141.77 | 115.2  |      80 |
 
 Trials needed to reach the cold search's final validation score. `cold_bo` reaches its
 own score by definition, so only the warm rows carry information:
 
 | strategy     | reached_target   |   mean_trials_when_reached |   median_trials_when_reached |
 |:-------------|:-----------------|---------------------------:|-----------------------------:|
-| cold_bo      | 20/20            |                      11.35 |                           12 |
-| warm_bo_all  | 7/20             |                       9    |                           11 |
-| warm_bo_topk | 11/20            |                       7.27 |                            9 |
+| cold_bo      | 80/80            |                      10.51 |                         11.5 |
+| warm_bo_all  | 26/80            |                       6.96 |                          6   |
+| warm_bo_topk | 40/80            |                       7    |                          7   |
 
 Drift detected at each boundary (KS tests, Holm-Bonferroni corrected):
 
 |   window_id |   n_drifted_features |   n_features_tested | input_drift   |   error_ratio | error_drift   |
 |------------:|---------------------:|--------------------:|:--------------|--------------:|:--------------|
-|           2 |                    9 |                   9 | True          |         2.824 | True          |
-|           3 |                    9 |                   9 | True          |         0.897 | False         |
-|           4 |                    7 |                   9 | True          |         1.221 | True          |
-|           5 |                    9 |                   9 | True          |         0.402 | False         |
+|           2 |                    9 |                   9 | True          |         1.646 | True          |
+|           3 |                    9 |                   9 | True          |         1.289 | True          |
+|           4 |                    9 |                   9 | True          |         0.898 | True          |
+|           5 |                    9 |                   9 | True          |         0.74  | True          |
 
 #### What this means
 
-**Warm-started search came out ahead, but the evidence is suggestive rather than
-conclusive.** `warm_bo_all` had the lowest mean post-drift test MAE at
-131.0 (SD 37.0), against 135.6 for the cold
-search and 137.9 for a plain refit. It beat the cold search in
-14/20 matched runs and the refit baseline in 14/20, with raw signed-rank
-p-values of 0.027 and 0.027.
+Read the three claims separately, because they have different answers.
 
-**None of it survives Holm-Bonferroni correction** across the seven comparisons made,
-so the honest reading is: a consistent small advantage, measured on one crop, four
-windows and five seeds, that a larger study would be needed to confirm. Reporting the
-raw p-values alone would overstate it.
+**1. Warm starting does beat cold starting — modestly, and consistently.**
+`warm_bo_all` won 48/80 matched runs against the cold search (mean
+-1.79 rupees, raw p=0.039), and `warm_bo_topk` won
+46/80 (p=0.044).
+Warm starting has the lower mean error in three of the four crops. This is the part of
+the research question that holds up.
 
-Two details are worth more than the headline:
+**2. It does not beat refitting or doing nothing.** Against a plain refit, warm start
+won only 45/80 runs (p=0.15). Against leaving the model completely
+alone it won 33/80 (p=0.42) — fewer than half.
 
-- All three searches reach **almost identical validation error**
-  (121.8 to 123.8), yet warm starting produces
-  better *test* error. The warm prior is not finding a better validation score; it is
-  finding configurations that generalise better from the same score.
-- `warm_bo_all` costs about 2.9x the wall-clock of a
-  cold search (7.1s against 2.5s), because the
-  Gaussian Process is refitted on a prior that grows with every window. Accuracy was
-  bought with time, not saved it.
+**3. Searching at all barely helps on this data, and often hurts.** The cold search
+*lost* to doing nothing in 52 of 80 runs
+(p=0.015 in no-retrain's favour). Every strategy's pooled mean sits between
+127.5 and 129.5 — under two rupees per quintal
+apart, on series whose prices run to thousands.
 
-**This reverses an earlier negative result, and the reason matters.** An earlier run of
-exactly this experiment on **3 states** found refit winning and warm starting adding
-nothing. Widening to 6 states took the validation block from 36 rows to
-156, and the ordering flipped. The earlier diagnosis —
-*"the bottleneck is validation signal, not search quality"* — predicted this. It is
-also a warning: at the smaller sample size, the same code gave the opposite answer.
+**Nothing survives Holm-Bonferroni correction**, pooled or per crop.
 
-Drift was real and detectable throughout: input drift fired at every boundary, and the
-deployed model's error nearly tripled at window 2.
+#### The onion-only result did not replicate, and that is the finding
+
+This experiment has now been run three times, and the answer moved each time:
+
+| Run | Scope | Winner | Warm vs refit |
+| --- | --- | --- | --- |
+| 2026-10-18 | onion, 3 states, 36 validation rows | `refit` | no benefit |
+| 2026-10-20 | onion, 6 states, 156 validation rows | `warm_bo_all` | warm wins 14/20, p=0.027 |
+| 2026-10-20 | **four crops**, 6 states each, 80 runs | `warm_bo_all` by a hair | warm wins 45/80, p=0.15 |
+
+The middle row looked like a clean win for warm starting. Adding three more crops
+dissolved it: onion and tomato favour warm starting, potato and cabbage favour refit,
+and the pooled advantage over refit stops being significant even before correction.
+
+The honest conclusion is narrower than the middle row suggested, and more useful than
+either extreme: **warm starting is a reliable improvement over cold starting, and
+hyperparameter search is a poor use of effort on this data compared with simply
+refitting or leaving the model alone.** The first result was real; generalising it from
+one crop would have been wrong.
+
+Drift itself was real and detectable throughout: input drift fired at every boundary,
+and the deployed model's error nearly tripled at one of them.
 
 ### Phase 6: parallel trials
 
@@ -499,31 +513,37 @@ Read these before quoting any number above.
    individual market, which very likely makes this task easier than the one it stands
    in for. See the data section for why no mandi-level source was reachable.
 2. **A random walk is competitive with everything here.** Repeating last week's price
-   scores MAE 60.6 on onion window 1;
-   the best learned model scores 56.9. The app reports this per
-   selection rather than hiding it.
-3. **The headline result does not survive multiplicity correction.** Warm starting had
-   the lowest mean error and won 14/20 matched runs against the cold search, but no
-   comparison is significant after Holm-Bonferroni across seven tests.
-4. **The same experiment gave the opposite answer at 3 states.** That is reported above
-   rather than quietly dropped, and it is the strongest caution in this README about
-   how much the conclusion depends on sample size.
-5. **Drift was observed, not induced.** Its size and timing were whatever the market did
-   between 2024 and 2025, so the experiment cannot say how the strategies behave under
-   drift of a controlled magnitude.
-6. **The budget of 15 trials is small by design** and the conclusions do not extend to
+   scores MAE 60.6 on onion window 1; the best learned model scores 56.9.
+   The app reports this per selection rather than hiding it.
+3. **No comparison survives multiplicity correction**, pooled or per crop. The
+   strongest surviving claim is warm-over-cold at a raw p of 0.039 across 80 matched
+   runs.
+4. **The crops disagree.** Onion and tomato favour warm starting; potato and cabbage
+   favour a plain refit. A pooled number hides that, so the per-crop split is reported
+   first.
+5. **The experiment has given three different answers** as its scope widened, and all
+   three are reported rather than quietly dropped. It is the strongest caution here
+   about how much a conclusion can depend on sample size and on how many crops you
+   look at.
+6. **Differences are tiny next to the price scale.** The pooled strategy means span
+   under two rupees per quintal, on series whose prices run to thousands. Whether that
+   is worth any engineering effort is a judgement the numbers cannot make.
+7. **Drift was observed, not induced.** Its size and timing were whatever the market
+   did between 2024 and 2025, so the experiment cannot say how the strategies behave
+   under drift of a controlled magnitude.
+8. **The budget of 15 trials is small by design** and the conclusions do not extend to
    larger budgets.
-7. **The drift experiment was run on onion only.** The other three crops have registered
-   models and live backtests, but the strategy comparison has not been repeated for
-   them. `--crop` makes that a one-command job; it has not been run.
-8. **One country, one horizon, four crops.** India, one week ahead.
-9. **Cabbage coverage is uneven.** Cabbage in Bihar has only 82 of 409 weeks and was
-   excluded by the stop rule. Check `results/data_quality.md` before trusting any
-   cabbage figure.
-10. **AutoKeras needed a compatibility shim.** AutoKeras 3.0.0 hands Keras 3 a NumPy
+9. **One country, one horizon, four crops.** India, one week ahead.
+10. **Coverage is uneven in places.** Bihar is 45-81% missing for every crop and is
+    never selected; cabbage in Madhya Pradesh sits right at the 10% limit. Check
+    `results/data_quality.md` before trusting any single series.
+11. **AutoKeras needed a compatibility shim.** AutoKeras 3.0.0 hands Keras 3 a NumPy
     integer where a Python `int` is required, and rejects pandas DataFrames outright.
     `src/automl/baselines/autokeras_baseline.py` works around both. The baseline number
     is real, but it came from a library combination that does not work out of the box.
-11. **Model selection used a single validation block.** No nested cross-validation, so
+12. **Model selection used a single validation block.** No nested cross-validation, so
     the reported test metrics still carry selection noise from one split.
+13. **Baselines, the tuner-vs-random check and the parallel timings were run on onion
+    only.** Only the drift experiment covers all four crops. `--crop` makes the rest a
+    one-command job per crop; it has not been run.
 <!-- LIMITATIONS_END -->

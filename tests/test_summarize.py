@@ -133,3 +133,65 @@ def test_mean_difference_tracks_the_injected_edge(edge):
     table = paired_tests(synthetic_results(warm_edge=edge))
     row = table[table["comparison"] == "warm_bo_all vs cold_bo"].iloc[0]
     assert row["mean_mae_difference"] == pytest.approx(-edge, abs=2.5)
+
+
+# --- multi-crop behaviour --------------------------------------------------------
+
+
+def multi_crop_results(seed: int = 0) -> pd.DataFrame:
+    """Two crops that prefer opposite strategies, on very different price scales."""
+    cheap = synthetic_results(seed=seed, warm_edge=12.0).assign(crop="Potato")
+    dear = synthetic_results(seed=seed + 1, warm_edge=-12.0).assign(crop="Tomato")
+    dear["mae"] = dear["mae"] * 5
+    return pd.concat([cheap, dear], ignore_index=True)
+
+
+def test_pair_index_includes_crop_when_present():
+    from automl.experiments.summarize import pair_index
+
+    assert pair_index(multi_crop_results()) == ["crop", "seed", "window_id"]
+    assert pair_index(synthetic_results().drop(columns=["crop"])) == ["seed", "window_id"]
+
+
+def test_per_crop_table_reports_each_crops_own_winner():
+    from automl.experiments.summarize import summarise_by_crop
+
+    table = summarise_by_crop(multi_crop_results()).set_index("crop")
+    assert table.loc["Potato", "best"].startswith("warm")
+    assert not table.loc["Tomato", "best"].startswith("warm")
+
+
+def test_pooling_without_crop_in_the_index_would_destroy_the_matching():
+    """Guards the bug this indexing prevents: two price regimes averaged into one pair."""
+    from automl.experiments.summarize import paired_tests
+
+    results = multi_crop_results()
+    correct = paired_tests(results)
+    naive = paired_tests(results.drop(columns=["crop"]))
+
+    def pairs(table):
+        return table[table["comparison"] == "warm_bo_all vs cold_bo"].iloc[0]["n_pairs"]
+
+    # Dropping crop collapses 40 genuine pairs into 20 mismatched ones.
+    assert pairs(correct) == 40
+    assert pairs(naive) == 20
+
+
+def test_per_crop_paired_test_separates_the_two_crops():
+    from automl.experiments.summarize import paired_tests_by_crop
+
+    table = paired_tests_by_crop(multi_crop_results(), "warm_bo_all", "cold_bo")
+    assert set(table["crop"]) == {"Potato", "Tomato"}
+    potato = table[table["crop"] == "Potato"].iloc[0]
+    tomato = table[table["crop"] == "Tomato"].iloc[0]
+    assert potato["mean_mae_difference"] < 0 < tomato["mean_mae_difference"]
+    assert potato["favours"] == "warm_bo_all"
+    assert tomato["favours"] == "cold_bo"
+
+
+def test_per_crop_tables_are_empty_without_a_crop_column():
+    from automl.experiments.summarize import paired_tests_by_crop, summarise_by_crop
+
+    flat = synthetic_results().drop(columns=["crop"])
+    assert summarise_by_crop(flat).empty
+    assert paired_tests_by_crop(flat).empty

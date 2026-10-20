@@ -293,7 +293,7 @@ Compare our tuner against random search with the same budget on window 1.
 - [ ] Custom BO tuner with working save/resume and warm start
 - [ ] AutoKeras and KerasTuner baselines reported
 - [ ] Parallel-trials timing reported
-- [ ] Flask app + Dockerfile + Jenkinsfile working
+- [ ] Web app + Dockerfile + Jenkinsfile working
 - [ ] README states limitations and prior work honestly
 
 ---
@@ -307,7 +307,7 @@ chosen for convenience.*
 1. **Entity is a state, not a mandi.** CEDA's district endpoint returns HTTP 500/504 and
    `agmarknet.gov.in` v2 requires a captcha, which was not bypassed. The only working
    programmatic source is state-level, so `market` holds a state-wide aggregate of mandi
-   modal prices. Markets kept: Maharashtra, Karnataka, Gujarat.
+   modal prices. Originally three states; see item 10 for the current scope.
 2. **Target is parameterised as a week-on-week delta** (`configs/features.yaml`,
    `target.mode: delta`), reconstructed to a price by adding `lag_1` back. The forecast
    target is unchanged — still next week's price in ₹/quintal, and every metric is
@@ -334,11 +334,29 @@ chosen for convenience.*
 
 ### Outcome against the research question
 
-**No.** Warm-started search did not beat the alternatives. Plain `refit` had the lowest
-mean post-drift test MAE (153.4) and beat the cold search in 15 of 20 runs. Rule 5
-required reporting that plainly, and `README.md` does. The one warm-start advantage was
-convergence speed: a median of 4 trials to reach cold's final validation score versus
-cold's 11, but only in 9 of 20 runs.
+**Measured three times as the scope widened, with the answer moving each time. All
+three are reported, because the movement is the most informative thing here.**
+
+| Run | Scope | Winner | Warm vs refit |
+| --- | --- | --- | --- |
+| 2026-10-18 | onion, 3 states, 36 validation rows | `refit` (153.4) | no benefit |
+| 2026-10-20 | onion, 6 states, 156 validation rows | `warm_bo_all` (131.0) | warm wins 14/20, p=0.027 |
+| 2026-10-20 | **4 crops**, 6 states each, 80 matched runs | `warm_bo_all` by a hair (127.5) | warm wins 45/80, p=0.15 |
+
+Taking the three claims of the research question separately, on the full four-crop run:
+
+- **vs cold start — modest yes.** `warm_bo_all` won 48/80 matched runs (raw p=0.039),
+  `warm_bo_topk` 46/80 (p=0.044), and warm has the lower mean in 3 of the 4 crops.
+- **vs refit — no.** 45/80, p=0.15.
+- **vs no retraining — no.** 33/80, p=0.42. Doing nothing is hard to beat.
+- The cold search *lost* to doing nothing in 52 of 80 runs (p=0.015 in no-retrain's
+  favour), so on this data hyperparameter search is a poor use of effort at all.
+- **Nothing survives Holm-Bonferroni**, pooled or per crop. Pooled strategy means span
+  under two rupees per quintal.
+
+The crops disagree: onion and tomato favour warm starting, potato and cabbage favour a
+plain refit. The single-crop result was real but did not generalise, and Rule 5 requires
+saying so rather than quoting the most flattering of the three runs. `README.md` does.
 
 ### Later changes, requested by the user on 2026-10-20
 
@@ -368,6 +386,9 @@ These came after the spec above was satisfied, and widen it rather than correct 
     computes from the dataset at request time, and shipping it as CSV keeps `pyarrow`
     (~170 MB) out of the runtime image.
 16. **Docker runs uvicorn**, not gunicorn, since FastAPI is ASGI.
+17. **The drift experiment now covers all four crops** (420 rows), with per-crop copies
+    in `results/by_crop/`. `summarize.py` reports the per-crop split before any pooled
+    number, and pairs on (crop, seed, window) so the matching survives pooling.
 
 ### Definition of Done — verified 2026-10-20
 
@@ -376,11 +397,11 @@ no `data/` present:
 
 | Item | Status |
 | --- | --- |
-| `uv sync && uv run pytest` passes on a fresh clone | **Verified.** 147 files cloned, 135 tests pass, `ruff check` clean. |
+| `uv sync && uv run pytest` passes on a fresh clone | **Verified 2026-10-20.** Tracked files extracted into an empty directory; tests pass, `ruff check` clean, and `uv run web-start` serves immediately because the models and `models/weekly_snapshot.csv` are committed. |
 | Every README number reproducible with a documented `uv run` command | **Verified.** Command table in `README.md`; `data/raw` must be refetched first via `automl.data.fetch`. |
-| Drift experiment: strategies × all windows × ≥5 seeds, real results | **Verified.** 5 strategies × 5 windows × 5 seeds = 105 rows in `results/drift_experiment.csv`. |
+| Drift experiment: strategies × all windows × ≥5 seeds, real results | **Verified.** 4 crops × 5 strategies × 5 windows × 5 seeds = 420 rows in `results/drift_experiment.csv`, per-crop copies in `results/by_crop/`. |
 | Custom BO tuner with working save/resume and warm start | **Verified.** `tests/test_tuner.py`, 33 tests, incl. exact resume and both warm variants. |
-| AutoKeras and KerasTuner baselines reported | **Verified.** `results/baselines.csv`, MAE 71.1 and 79.2. |
+| AutoKeras and KerasTuner baselines reported | **Verified.** `results/baselines.csv`, MAE 56.9 and 59.4 (onion). |
 | Parallel-trials timing reported | **Verified.** `results/parallel.csv`, 1/2/4/8 workers. |
-| Flask app + Dockerfile + Jenkinsfile working | **Verified.** Image builds at 710 MB; `/health` 200 and `/predict` returns ₹1303.85 from the container. |
-| README states limitations and prior work honestly | **Verified.** Eight limitations listed, negative result stated first. |
+| Web app + Dockerfile + Jenkinsfile working | **Verified.** FastAPI; image builds at 754 MB; `/api/health` 200 and `/api/predict` returns a live price from the container. |
+| README states limitations and prior work honestly | **Verified.** Thirteen limitations listed; the per-crop disagreement and the three conflicting runs are stated before any favourable number. |

@@ -24,6 +24,23 @@ LOGGER = logging.getLogger(__name__)
 STRATEGY_ORDER = ["no_retrain", "refit", "cold_bo", "warm_bo_all", "warm_bo_topk"]
 
 
+def pair_index(results: pd.DataFrame) -> list[str]:
+    """Return the columns that identify one matched run.
+
+    Strategies are compared on identical (crop, seed, window) combinations. Leaving
+    crop out of the index would average four different price regimes into one pair and
+    silently destroy the matching.
+
+    Args:
+        results: The results table.
+
+    Returns:
+        ``["crop", "seed", "window_id"]`` when a crop column is present, else
+        ``["seed", "window_id"]``.
+    """
+    return (["crop"] if "crop" in results.columns else []) + ["seed", "window_id"]
+
+
 def load_results(path: str | Path) -> pd.DataFrame:
     """Read the drift experiment results.
 
@@ -68,6 +85,30 @@ def summarise_by_strategy(results: pd.DataFrame) -> pd.DataFrame:
     )
     order = [name for name in STRATEGY_ORDER if name in grouped.index]
     return grouped.loc[order].round(2).reset_index()
+
+
+def summarise_by_crop(results: pd.DataFrame) -> pd.DataFrame:
+    """Mean post-drift test MAE per crop and strategy.
+
+    A single pooled average can hide the fact that different crops prefer different
+    strategies, which is exactly what happens here, so this breakdown is reported
+    before any pooled number.
+
+    Args:
+        results: The results table.
+
+    Returns:
+        A wide table, crops as rows and strategies as columns, plus the winning
+        strategy for each crop.
+    """
+    if "crop" not in results.columns:
+        return pd.DataFrame()
+    later = results[results["window_id"] > 1]
+    pivot = later.pivot_table(index="crop", columns="strategy", values="mae", aggfunc="mean")
+    columns = [name for name in STRATEGY_ORDER if name in pivot.columns]
+    table = pivot[columns].round(1)
+    table["best"] = table.idxmin(axis=1)
+    return table.reset_index()
 
 
 def summarise_by_window(results: pd.DataFrame) -> pd.DataFrame:
@@ -150,7 +191,7 @@ def head_to_head(results: pd.DataFrame, reference: str = "cold_bo") -> pd.DataFr
         One row per strategy with its win count against the reference.
     """
     later = results[results["window_id"] > 1]
-    pivot = later.pivot_table(index=["seed", "window_id"], columns="strategy", values="mae")
+    pivot = later.pivot_table(index=pair_index(results), columns="strategy", values="mae")
     if reference not in pivot.columns:
         return pd.DataFrame()
     rows = []
@@ -199,14 +240,14 @@ def paired_tests(results: pd.DataFrame) -> pd.DataFrame:
     from automl.drift import holm_bonferroni
 
     later = results[results["window_id"] > 1]
-    pivot = later.pivot_table(index=["seed", "window_id"], columns="strategy", values="mae")
+    pivot = later.pivot_table(index=pair_index(results), columns="strategy", values="mae")
     comparisons = [
         ("warm_bo_all", "cold_bo"),
         ("warm_bo_all", "refit"),
         ("warm_bo_all", "no_retrain"),
         ("warm_bo_topk", "cold_bo"),
-        ("warm_bo_topk", "refit"),
         ("cold_bo", "refit"),
+        ("cold_bo", "no_retrain"),
         ("refit", "no_retrain"),
     ]
     rows, raw = [], {}
@@ -245,6 +286,54 @@ def paired_tests(results: pd.DataFrame) -> pd.DataFrame:
     flags = holm_bonferroni(raw, alpha=0.05)
     for row in rows:
         row["significant_after_holm"] = bool(flags.get(row["comparison"], False))
+    return pd.DataFrame(rows).sort_values("p_value", ignore_index=True)
+
+
+def paired_tests_by_crop(
+    results: pd.DataFrame, left: str = "warm_bo_all", right: str = "refit"
+) -> pd.DataFrame:
+    """Run the same paired comparison separately within each crop.
+
+    Args:
+        results: The results table.
+        left: The strategy under test.
+        right: The baseline it is compared against.
+
+    Returns:
+        One row per crop. The p-values carry a Holm-Bonferroni correction across crops.
+    """
+    from scipy.stats import wilcoxon
+
+    from automl.drift import holm_bonferroni
+
+    if "crop" not in results.columns:
+        return pd.DataFrame()
+    later = results[results["window_id"] > 1]
+    rows, raw = [], {}
+    for crop, group in later.groupby("crop"):
+        pivot = group.pivot_table(index=["seed", "window_id"], columns="strategy", values="mae")
+        if left not in pivot.columns or right not in pivot.columns:
+            continue
+        difference = (pivot[left] - pivot[right]).dropna()
+        if len(difference) < 3:
+            continue
+        _, p_value = wilcoxon(difference)
+        raw[str(crop)] = float(p_value)
+        rows.append(
+            {
+                "crop": crop,
+                "n_pairs": int(len(difference)),
+                f"{left}_wins": f"{int((difference < 0).sum())}/{len(difference)}",
+                "mean_mae_difference": round(float(difference.mean()), 2),
+                "p_value": round(float(p_value), 4),
+                "favours": left if difference.mean() < 0 else right,
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    flags = holm_bonferroni(raw, alpha=0.05)
+    for row in rows:
+        row["significant_after_holm"] = bool(flags.get(str(row["crop"]), False))
     return pd.DataFrame(rows).sort_values("p_value", ignore_index=True)
 
 
@@ -370,6 +459,8 @@ def write_summary(results: pd.DataFrame, output: str | Path) -> Path:
     validation = summarise_validation(results)
     versus_cold = head_to_head(results, "cold_bo")
     paired = paired_tests(results)
+    by_crop = summarise_by_crop(results)
+    per_crop_paired = paired_tests_by_crop(results)
 
     warm_rows = to_target[to_target["strategy"].str.startswith("warm")]
     cold_trials = to_target.loc[to_target["strategy"] == "cold_bo", "median_trials_when_reached"]
@@ -390,6 +481,11 @@ def write_summary(results: pd.DataFrame, output: str | Path) -> Path:
         "",
         "All numbers below were produced by `uv run python -m automl.experiments.run_drift`.",
         "",
+        *(
+            [f"- Crops: {sorted(results['crop'].unique().tolist())}"]
+            if "crop" in results.columns
+            else []
+        ),
         f"- Seeds: {sorted(results['seed'].unique().tolist())}",
         f"- Windows: {sorted(results['window_id'].unique().tolist())}",
         f"- Trial budget per search: {int(results['trials_used'].max())}",
@@ -398,6 +494,22 @@ def write_summary(results: pd.DataFrame, output: str | Path) -> Path:
         "",
         by_strategy.to_markdown(index=False),
         "",
+        *(
+            [
+                "## Facts: the same thing, split by crop",
+                "",
+                "Pooling hides disagreement between crops, so this comes first.",
+                "",
+                by_crop.to_markdown(index=False),
+                "",
+                "### Warm start against a plain refit, within each crop",
+                "",
+                per_crop_paired.to_markdown(index=False),
+                "",
+            ]
+            if not by_crop.empty
+            else []
+        ),
         "## Facts: validation error reached by each search",
         "",
         "This is what the tuner optimises. Test error is a separate question.",
