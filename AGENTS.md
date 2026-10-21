@@ -389,6 +389,18 @@ These came after the spec above was satisfied, and widen it rather than correct 
 17. **The drift experiment now covers all four crops** (420 rows), with per-crop copies
     in `results/by_crop/`. `summarize.py` reports the per-crop split before any pooled
     number, and pairs on (crop, seed, window) so the matching survives pooling.
+18. **Baselines, BO-vs-random and the parallel timings also cover all four crops.**
+    Each experiment stamps its crop on every row; per-crop files are in
+    `results/by_crop/` and the top-level CSVs are the concatenation.
+19. **The report is generated, not hand-written.** `docs/report.md` is produced by
+    `uv run python -m automl.experiments.make_report`, which interpolates every figure
+    from `results/`. A number typed into prose can drift from its CSV unnoticed; this
+    cannot. Tests assert the generator builds with no results present, leaves no
+    unresolved placeholder, mentions all six course modules, and keeps the required
+    "not a new algorithm" framing. Section numbering follows `docs/report_outline.md`.
+20. **BO does not reliably beat random search at this budget** (10 of 20 crop-seed pairs
+    on validation, tied on test, ~1.5x the cost). The earlier onion-only run suggested
+    otherwise. Reported in both README and report; Rule 5 applies to the tuner too.
 
 ### Definition of Done — verified 2026-10-20
 

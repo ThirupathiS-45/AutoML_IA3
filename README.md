@@ -177,6 +177,7 @@ uv run ruff check .      # lint
 | 6. Parallel | `uv run python -m automl.experiments.run_parallel` | `results/parallel.csv` |
 | 7. Register models | `uv run python -m automl.registry` | `models/<crop>/`, `models/index.json` |
 | 9. Generality | `uv run python -m automl.experiments.run_generality` | `results/generality.csv` |
+| 10. Report | `uv run python -m automl.experiments.make_report` | `docs/report.md` |
 
 Every experiment takes `--crop` and defaults to the first crop in `configs/data.yaml`:
 
@@ -219,28 +220,41 @@ Tomato's error is far larger because tomato prices are far more volatile, not be
 the model is worse. The app's live backtest makes that concrete: for **tomato and
 cabbage the model beats the naive forecast**, while for onion and potato it does not.
 
-### Baselines, onion, window 1 test block (156 rows)
+### Baselines, window 1 test block, all four crops
 
-| method               |    mae |   rmse |   mape |   seconds |
-|:---------------------|-------:|-------:|-------:|----------:|
-| autokeras_structured |  56.88 |  84.93 |   4.6  |     14.53 |
-| kerastuner_mlp       |  59.36 |  86.45 |   4.85 |     58.34 |
-| naive_last_week      |  60.63 |  89.32 |   4.91 |      0    |
-| lightgbm_default     |  66.56 |  91.77 |   5.23 |      0.18 |
-| naive_mean_4w        | 105.31 | 150.77 |   8.06 |      0    |
+| crop    | method               |     mae |    rmse |   mape |   seconds |
+|:--------|:---------------------|--------:|--------:|-------:|----------:|
+| Onion   | naive_last_week      |   60.63 |   89.32 |   4.91 |      0    |
+| Onion   | naive_mean_4w        |  105.31 |  150.77 |   8.06 |      0    |
+| Onion   | lightgbm_default     |   66.56 |   91.77 |   5.23 |      0.27 |
+| Onion   | autokeras_structured |   56.88 |   84.93 |   4.6  |     11.56 |
+| Onion   | kerastuner_mlp       |   59.36 |   86.45 |   4.85 |     58.4  |
+| Potato  | naive_last_week      |   30.11 |   43.2  |   2.25 |      0    |
+| Potato  | naive_mean_4w        |   43.63 |   57.36 |   3.49 |      0    |
+| Potato  | lightgbm_default     |   32.78 |   48.34 |   2.42 |      0.08 |
+| Potato  | autokeras_structured |   28.95 |   41.7  |   2.15 |     20.04 |
+| Potato  | kerastuner_mlp       |   29.7  |   42.41 |   2.22 |     91.56 |
+| Tomato  | naive_last_week      |  598.26 |  937.34 |  18.03 |      0    |
+| Tomato  | naive_mean_4w        | 1368.44 | 1940.75 |  45.59 |      0    |
+| Tomato  | lightgbm_default     |  483.8  |  775.82 |  14.3  |      0.08 |
+| Tomato  | autokeras_structured |  457.02 |  731.45 |  14.18 |     22.16 |
+| Tomato  | kerastuner_mlp       |  461.25 |  767.95 |  14.01 |     80.61 |
+| Cabbage | naive_last_week      |   99.96 |  138.21 |   7.89 |      0    |
+| Cabbage | naive_mean_4w        |  164.09 |  225.98 |  12    |      0    |
+| Cabbage | lightgbm_default     |   98.7  |  151.51 |   7.87 |      0.08 |
+| Cabbage | autokeras_structured |   93.53 |  134.68 |   7.33 |     21.87 |
+| Cabbage | kerastuner_mlp       |   94.69 |  134.35 |   7.48 |     95.41 |
 
-Our tuned LightGBM scored **59.7** on the same block
-(`results/tuner_vs_random.csv`, mean of 5 seeds).
+The best learned model beats the naive forecast on **all four crops** here, by 3-7% on
+onion, potato and cabbage and by a wide margin on tomato, whose volatility leaves more
+signal to learn. The four-week mean is much worse than the one-week lag everywhere.
 
-**The naive forecast is a real opponent.** Repeating last week's price gives MAE
-60.6. AutoKeras
-(56.9), our tuned LightGBM
-(59.7) and the KerasTuner MLP
-(59.4) all edge past it, but not by much.
-Weekly prices behave close to a random walk, so this is the expected shape of the
-result rather than a defect. The app's `/api/backtest` reports this honestly per crop
-and state — and for tomato the model wins clearly, while for onion and potato the naive
-forecast often wins.
+That is window-1 specific and does not hold everywhere: the deployed models' live
+backtest over the most recent 26 weeks finds the naive forecast winning for onion and
+potato. Both are real; they cover different periods and different models. The honest
+summary is that the learned models and the random walk are close enough that which one
+wins depends on the slice — which is why `/api/backtest` reports it per selection
+instead of the README claiming a single winner.
 
 Note the KerasTuner custom block's choice: of the four lag features it could switch on
 or off, it kept **only `lag_1`**. The search independently rediscovered that last week's
@@ -248,17 +262,26 @@ price carries nearly all the signal.
 
 ### Phase 4: our Bayesian optimizer against random search
 
-Onion, window 1, 15 trials each, 5 seeds, identical data and seeds.
+15 trials each, 5 seeds, identical data and seeds, per crop:
 
-              valid_mae       test_mae       seconds      
-                   mean   std     mean   std    mean   std
-method                                                    
-custom_bo         84.54  1.36    59.73  1.79    4.87  2.80
-random_search     84.76  0.50    60.57  2.18    1.96  0.26
+| crop    | method        |   valid_mae |   test_mae |   seconds |
+|:--------|:--------------|------------:|-----------:|----------:|
+| Cabbage | custom_bo     |       94.47 |      94.64 |      2.07 |
+| Cabbage | random_search |       94.3  |      93.62 |      1.52 |
+| Onion   | custom_bo     |       84.54 |      59.73 |      1.92 |
+| Onion   | random_search |       84.76 |      60.57 |      1.39 |
+| Potato  | custom_bo     |       60.46 |      29.38 |      2.29 |
+| Potato  | random_search |       61.01 |      29.15 |      1.29 |
+| Tomato  | custom_bo     |      133.85 |     525.64 |      2.13 |
+| Tomato  | random_search |      134.85 |     525.38 |      1.56 |
 
-The tuner is slightly ahead on both validation and test error, but the margins are
-inside one standard deviation. On this low-dimensional space with a 15-trial budget,
-random search is close to competitive — which is worth stating rather than hiding.
+**Random search is genuinely competitive.** Averaged per crop the custom optimizer
+reaches a slightly lower validation error on three of four crops, but run by run it is a
+coin flip — it won **10 of 20** crop-seed pairs on validation, test error
+is tied, and it costs about 1.5x the wall clock. An earlier onion-only run showed it
+clearly ahead; across four crops that advantage disappears. With eight dimensions and a
+15-trial budget a Gaussian Process has little room to beat uniform sampling, and the
+surrogate is not yet paying for itself at this budget.
 
 ### Phase 5: the drift experiment (core result)
 
@@ -384,19 +407,32 @@ and the deployed model's error nearly tripled at one of them.
 
 ### Phase 6: parallel trials
 
-Batch Bayesian optimization, 24 trials, 3 seeds, on a 16-core machine.
+Batch Bayesian optimization, 24 trials, 3 seeds, 16-core machine, per crop:
 
-|   n_workers |   seconds |   speedup_vs_1_worker |   best_valid_mae |
-|------------:|----------:|----------------------:|-----------------:|
-|           1 |     7.835 |                 1     |           84.658 |
-|           2 |     9.102 |                 0.937 |           83.856 |
-|           4 |     6.13  |                 1.364 |           83.934 |
-|           8 |     5.475 |                 1.438 |           84.766 |
+| crop    |   n_workers |   seconds |   speedup_vs_1_worker |   best_valid_mae |
+|:--------|------------:|----------:|----------------------:|-----------------:|
+| Cabbage |           1 |     3.687 |                 1     |           93.929 |
+| Cabbage |           2 |     4.191 |                 0.893 |           93.098 |
+| Cabbage |           4 |     2.747 |                 1.351 |           94.231 |
+| Cabbage |           8 |     3.038 |                 1.218 |           93.269 |
+| Onion   |           1 |     3.462 |                 1     |           84.658 |
+| Onion   |           2 |     3.612 |                 0.953 |           83.856 |
+| Onion   |           4 |     2.693 |                 1.292 |           83.934 |
+| Onion   |           8 |     3.031 |                 1.146 |           84.766 |
+| Potato  |           1 |     4.921 |                 1     |           59.956 |
+| Potato  |           2 |     4.398 |                 1.169 |           59.706 |
+| Potato  |           4 |     3.028 |                 1.627 |           60.282 |
+| Potato  |           8 |     3.336 |                 1.477 |           60.145 |
+| Tomato  |           1 |     4.227 |                 1     |          133.495 |
+| Tomato  |           2 |     4.494 |                 0.946 |          134.56  |
+| Tomato  |           4 |     2.61  |                 1.626 |          133.531 |
+| Tomato  |           8 |     3.038 |                 1.389 |          135.767 |
 
-Peak speed-up is 1.44x. Validation quality is flat
-across worker counts, so batching did not cost accuracy — it simply bought less time
-than the worker count suggests, because a single LightGBM fit on this data is quick
-enough that process dispatch is a real share of the cost.
+Peak speed-up is 1.3-1.6x at four workers, and eight workers is slower than four.
+Validation quality is flat across worker counts, so batching did not cost accuracy — it
+simply bought less time than the worker count suggests, because one LightGBM fit on this
+data takes a fraction of a second, the same order as the cost of dispatching a task to a
+worker process. Trial-level parallelism pays when a single trial is expensive.
 
 ### Phase 9: the same tuner on a different problem
 
@@ -499,16 +535,16 @@ parallelism across CPU cores, which is what is measured.
 | --- | --- |
 | Data pipeline (fetch, clean, weekly aggregate, quality report) | Done, 4 crops x 8 states, 2018-2025 |
 | Features and time windows, with leakage tests | Done |
-| Baselines (naive, LightGBM, AutoKeras, KerasTuner) | Done, **onion only** |
+| Baselines (naive, LightGBM, AutoKeras, KerasTuner) | Done, all four crops |
 | Custom Bayesian optimizer (space, GP surrogate, EI, resume, warm start) | Done |
-| BO vs random search | Done, **onion only** |
+| BO vs random search | Done, all four crops |
 | Drift experiment | Done, **all four crops**, 420 rows |
-| Parallel trial timings | Done, **onion only** |
+| Parallel trial timings | Done, all four crops |
 | Model registry + model cards | Done, one model per crop |
 | FastAPI app + `web-start` + Docker + Jenkinsfile | Done |
 | Generality check (20 Newsgroups) | Done |
 | README, report outline | Done |
-| Report prose | **Not written.** The outline is in `docs/report_outline.md`. |
+| Report prose | Done - `docs/report.md`, generated from the CSVs by `uv run python -m automl.experiments.make_report` |
 
 Tests: 175 passing. `ruff check` and `ruff format --check` clean. Verified against a
 fresh checkout into an empty directory, where `uv sync && uv run web-start` serves
@@ -537,7 +573,9 @@ models/
   weekly_snapshot.csv  the table the app serves from (committed)
   <crop>/           model.pkl, model_card.json, serving_features.pkl per crop
 tests/              leakage, split-ordering, tuner, drift, registry and app tests
-docs/               report outline
+docs/
+  report.md         the full report, generated from results/
+  report_outline.md section-to-module map
 notebooks/          exploration only; never imported by src
 ```
 
@@ -594,7 +632,7 @@ Read these before quoting any number above.
     is real, but it came from a library combination that does not work out of the box.
 12. **Model selection used a single validation block.** No nested cross-validation, so
     the reported test metrics still carry selection noise from one split.
-13. **Baselines, the tuner-vs-random check and the parallel timings were run on onion
-    only.** Only the drift experiment covers all four crops. `--crop` makes the rest a
-    one-command job per crop; it has not been run.
+13. **The custom optimizer does not reliably beat random search** at this budget:
+    10 of 20 crop-seed pairs on validation, tied on test, at about 1.5x the cost. The
+    surrogate is the centrepiece of Module 4 and is not yet paying for itself.
 <!-- LIMITATIONS_END -->

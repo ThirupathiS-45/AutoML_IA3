@@ -108,6 +108,7 @@ def run(
         The results table.
     """
     setup = build_setup(crop=crop)
+    crop_label = setup.crop or str(setup.data_config["crops"][0]["name"])
     window = setup.windows[window_index]
     LOGGER.info("baselines on window %d (%s)", window.window_id, window.as_record())
 
@@ -131,6 +132,7 @@ def run(
         LOGGER.info("skipping deep baselines; pass --with-deep to include them")
 
     table = pd.DataFrame(records)
+    table.insert(0, "crop", crop_label)
     path = ensure_parent(output)
     table.to_csv(path, index=False)
     LOGGER.info("wrote %s", path)

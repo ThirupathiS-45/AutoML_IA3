@@ -53,6 +53,7 @@ def run(
         One row per (method, seed).
     """
     setup = build_setup(crop=crop)
+    crop_label = setup.crop or str(setup.data_config["crops"][0]["name"])
     window = setup.windows[window_index]
     space = SearchSpace.from_config(setup.search_space_config)
     trials = budget or int(setup.experiment_config["budget"]["trials"])
@@ -86,6 +87,7 @@ def run(
             )
             records.append(
                 {
+                    "crop": crop_label,
                     "method": method,
                     "window_id": window.window_id,
                     "seed": seed,

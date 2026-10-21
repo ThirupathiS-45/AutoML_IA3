@@ -195,6 +195,7 @@ def run(
         The timing table, including the speed-up relative to a single worker.
     """
     setup = build_setup(crop=crop)
+    crop_label = setup.crop or str(setup.data_config["crops"][0]["name"])
     space = SearchSpace.from_config(setup.search_space_config)
     window = setup.windows[window_index]
 
@@ -215,6 +216,7 @@ def run(
             records.append(record)
 
     table = pd.DataFrame(records)
+    table.insert(0, "crop", crop_label)
     baseline = (
         table[table["n_workers"] == 1].groupby("seed")["seconds"].mean().rename("baseline_seconds")
     )
