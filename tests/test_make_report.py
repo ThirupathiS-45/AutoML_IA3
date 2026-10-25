@@ -118,12 +118,34 @@ def test_report_writes_to_disk(tmp_path, monkeypatch):
 
 
 def test_generated_report_matches_the_committed_results():
-    """Regenerating must reproduce the committed report byte for byte."""
+    """Regenerating must reproduce the committed report byte for byte.
+
+    This needs the processed dataset, because one section reports the window layout
+    computed from it. The dataset is deliberately git-ignored, so in a clean CI
+    checkout this check is skipped rather than failed: it would otherwise break every
+    build for a reason that says nothing about the code.
+    """
     from automl.config import resolve_path
+    from automl.experiments.make_report import gather
 
     committed = resolve_path("docs/report.md")
     if not committed.is_file():
         pytest.skip("report has not been generated yet")
-    assert render(
-        __import__("automl.experiments.make_report", fromlist=["gather"]).gather()
-    ) == committed.read_text(encoding="utf-8")
+    if not resolve_path("data/processed/weekly.parquet").is_file():
+        pytest.skip("processed dataset absent; run automl.data.aggregate to check this")
+    assert render(gather()) == committed.read_text(encoding="utf-8")
+
+
+def test_report_is_self_consistent_without_the_dataset():
+    """Whatever the report says about windows, it must still build and stay coherent.
+
+    The dataset-dependent section is the only part that varies, so this is the check
+    that genuinely runs in CI: the report builds, keeps its structure, and never
+    silently emits an empty table without the stand-in note.
+    """
+    from automl.experiments.make_report import gather
+
+    text = render(gather())
+    assert text.startswith("# Drift-Aware AutoML")
+    assert "## 12. Conclusion and future work" in text
+    assert "|  |" not in text, "an empty table leaked into the report"
