@@ -402,6 +402,27 @@ These came after the spec above was satisfied, and widen it rather than correct 
     on validation, tied on test, ~1.5x the cost). The earlier onion-only run suggested
     otherwise. Reported in both README and report; Rule 5 applies to the tuner too.
 
+### Deployment, 2026-10-26
+
+21. **The companion infrastructure repo is `devops_IA3`, not `mandi-infra`.** Section 2
+    names `mandi-infra`; the repository actually created is
+    `github.com/dharshan-kumarj/devops_IA3`, holding `terraform/` and `ansible/`. The
+    split itself is unchanged: this repo keeps the `Dockerfile` and `Jenkinsfile`, that
+    one owns the Azure resources.
+
+22. **Jenkins runs locally and polls, rather than receiving a webhook.** A local
+    install behind NAT cannot be reached by GitHub. `pollSCM('H/2 * * * *')` is declared
+    in the `Jenkinsfile`. Terraform is run by hand once; Jenkins only ever deploys a new
+    container onto the VM that already exists, so no Azure service principal is needed
+    and a push can never destroy infrastructure.
+
+23. **The Docker Build stage no longer requires `data/processed/weekly.parquet`.** It
+    did, and that file is git-ignored by design and excluded by `.dockerignore`, so the
+    check would have failed every Jenkins build on a clean checkout while saying nothing
+    about the code. The image serves from `models/` alone. Same failure mode as the
+    report test fixed in `768de3b`, found the same way: by running the stage against a
+    clean extraction of tracked files only.
+
 ### Definition of Done — verified 2026-10-20
 
 Checked against a genuine `git clone` of this repository into an empty directory, with
