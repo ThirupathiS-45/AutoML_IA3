@@ -406,7 +406,7 @@ These came after the spec above was satisfied, and widen it rather than correct 
 
 21. **The companion infrastructure repo is `devops_IA3`, not `mandi-infra`.** Section 2
     names `mandi-infra`; the repository actually created is
-    `github.com/dharshan-kumarj/devops_IA3`, holding `terraform/` and `ansible/`. The
+    `github.com/dharshan-kumarj/Devops_IA3`, holding `terraform/` and `ansible/`. The
     split itself is unchanged: this repo keeps the `Dockerfile` and `Jenkinsfile`, that
     one owns the Azure resources.
 

@@ -31,7 +31,7 @@ pipeline {
         // GitHub repo name (AutoML_IA3).
         IMAGE_NAME   = 'ghcr.io/dharshan-kumarj/automl_ia3'
         IMAGE_TAG    = "${env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'local'}"
-        INFRA_REPO   = 'https://github.com/dharshan-kumarj/devops_IA3.git'
+        INFRA_REPO   = 'https://github.com/dharshan-kumarj/Devops_IA3.git'
         INFRA_BRANCH = 'main'
         UV_CACHE_DIR = "${env.WORKSPACE}/.uv-cache"
     }
