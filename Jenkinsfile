@@ -9,6 +9,20 @@
 // Jenkins runs locally (see docs/deployment.md), so a local install cannot receive
 // a GitHub webhook. Poll SCM is used instead; the assignment allows either.
 
+// A `when { branch ... }` directive only works in a Multibranch Pipeline or an
+// Organization Folder, where Jenkins sets BRANCH_NAME. This job is a plain
+// "Pipeline script from SCM", where BRANCH_NAME is null, so that directive
+// silently skipped Push, Deploy and Verify while the build still went green --
+// a false success, which is worse than a failure because nothing looks wrong.
+//
+// The git plugin does set GIT_BRANCH (as "origin/main"), so fall back to it and
+// accept either spelling. This keeps working unchanged if the job is ever
+// converted to Multibranch.
+def onDeployBranch() {
+    String branch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+    return branch == 'main' || branch.endsWith('/main')
+}
+
 pipeline {
     agent any
 
@@ -100,7 +114,7 @@ pipeline {
         }
 
         stage('Push to GHCR') {
-            when { branch 'main' }
+            when { expression { onDeployBranch() } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'ghcr-credentials',
@@ -119,7 +133,7 @@ pipeline {
         }
 
         stage('Deploy') {
-            when { branch 'main' }
+            when { expression { onDeployBranch() } }
             steps {
                 dir('infra') {
                     deleteDir()
@@ -151,7 +165,7 @@ pipeline {
         }
 
         stage('Verify Deployment') {
-            when { branch 'main' }
+            when { expression { onDeployBranch() } }
             steps {
                 withCredentials([string(credentialsId: 'azure-vm-ip', variable: 'VM_IP')]) {
                     sh '''
@@ -176,7 +190,15 @@ pipeline {
             sh 'docker image prune -f --filter "until=72h" || true'
         }
         success {
-            echo "Deployed ${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+            script {
+                if (onDeployBranch()) {
+                    echo "Deployed ${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+                } else {
+                    echo "Built and tested ${env.IMAGE_NAME}:${env.IMAGE_TAG}; " +
+                         "NOT deployed -- this is not the deploy branch " +
+                         "(BRANCH_NAME=${env.BRANCH_NAME}, GIT_BRANCH=${env.GIT_BRANCH})."
+                }
+            }
         }
         failure {
             echo "Build ${env.BUILD_NUMBER} failed at stage: ${env.STAGE_NAME}"
