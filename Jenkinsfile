@@ -123,10 +123,28 @@ pipeline {
                 )]) {
                     sh '''
                         set -eu
+                        # Keep the registry credential in a throwaway config
+                        # inside the workspace, instead of the jenkins user's
+                        # shared ~/.docker/config.json.
+                        #
+                        # Two reasons. A failed push used to leave a bad GHCR
+                        # credential behind -- `docker logout` sat after the
+                        # push under `set -eu`, so it never ran -- and every
+                        # later build then sent that broken token when pulling
+                        # even PUBLIC ghcr.io images, failing with
+                        # "failed to fetch oauth token: denied". And a token on
+                        # disk outlives the build that needed it.
+                        #
+                        # DOCKER_CONFIG only moves client-side auth; the image
+                        # itself lives in the daemon, so push still finds it.
+                        export DOCKER_CONFIG="${WORKSPACE}/.docker-ghcr"
+                        rm -rf "$DOCKER_CONFIG"
+                        mkdir -p "$DOCKER_CONFIG"
+                        trap 'rm -rf "$DOCKER_CONFIG"' EXIT INT TERM
+
                         echo "$GHCR_TOKEN" | docker login "${REGISTRY}" -u "$GHCR_USER" --password-stdin
                         docker push "${IMAGE_NAME}:${IMAGE_TAG}"
                         docker push "${IMAGE_NAME}:latest"
-                        docker logout "${REGISTRY}"
                     '''
                 }
             }
@@ -187,7 +205,14 @@ pipeline {
 
     post {
         always {
-            sh 'docker image prune -f --filter "until=72h" || true'
+            sh '''
+                docker image prune -f --filter "until=72h" || true
+                # Safety net. Nothing should be writing the shared docker config
+                # any more, but a stale ghcr.io credential there breaks even
+                # public pulls, so never let one outlive the build.
+                rm -rf "${WORKSPACE}/.docker-ghcr" || true
+                docker logout ghcr.io >/dev/null 2>&1 || true
+            '''
         }
         success {
             script {
