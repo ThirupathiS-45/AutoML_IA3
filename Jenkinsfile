@@ -41,9 +41,10 @@ pipeline {
 
     environment {
         REGISTRY     = 'ghcr.io'
-        // GHCR rejects uppercase in a repository path, so this is not the literal
-        // GitHub repo name (AutoML_IA3).
-        IMAGE_NAME   = 'ghcr.io/dharshan-kumarj/automl_ia3'
+        // IMAGE_NAME is NOT set here. It is derived in the Checkout stage from
+        // whichever fork is being built, so a teammate building their own fork
+        // pushes to their own GHCR namespace with their own token, instead of
+        // needing write access to someone else's packages.
         IMAGE_TAG    = "${env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'local'}"
         INFRA_REPO   = 'https://github.com/dharshan-kumarj/Devops_IA3.git'
         INFRA_BRANCH = 'main'
@@ -55,6 +56,20 @@ pipeline {
             steps {
                 checkout scm
                 sh 'git rev-parse --short HEAD'
+                script {
+                    // Take the GitHub owner from the remote this build came from.
+                    // GHCR rejects uppercase in a repository path, so the whole
+                    // thing is lowercased -- which is why this is not simply the
+                    // repo's own name (AutoML_IA3).
+                    String url = sh(script: 'git config --get remote.origin.url',
+                                    returnStdout: true).trim()
+                    def match = url =~ /[:\/]([^\/:]+)\/[^\/]+?(?:\.git)?$/
+                    if (!match) {
+                        error "Could not read the GitHub owner from remote: ${url}"
+                    }
+                    env.IMAGE_NAME = "${env.REGISTRY}/${match[0][1].toLowerCase()}/automl_ia3"
+                    echo "Building ${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+                }
             }
         }
 
@@ -76,6 +91,18 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+                    # The Dockerfile uses `RUN --mount=type=cache`, which the legacy
+                    # builder cannot parse -- it fails with "the --mount option
+                    # requires BuildKit" several steps in, after sending the whole
+                    # build context. Fail up front with something actionable instead.
+                    if ! docker buildx version >/dev/null 2>&1; then
+                        echo "docker buildx is not installed, and this Dockerfile needs it."
+                        echo "Install it with:   sudo apt install -y docker-buildx-plugin"
+                        echo "then restart Jenkins:   sudo systemctl restart jenkins"
+                        exit 1
+                    fi
+                    export DOCKER_BUILDKIT=1
+
                     # The image serves from models/ alone: the per-crop models and
                     # models/weekly_snapshot.csv, both committed. data/ is excluded by
                     # .dockerignore, so nothing under it is required to build here.

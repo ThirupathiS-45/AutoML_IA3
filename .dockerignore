@@ -5,6 +5,14 @@ __pycache__
 *.pyc
 .pytest_cache
 .ruff_cache
+# Jenkins points UV_CACHE_DIR at the workspace, so uv's cache lands here. It
+# reached 2.9 GB of build context on one machine and a local cache has been seen
+# at 27 GB. Nothing in it belongs in an image.
+.uv-cache
+# Written by the pipeline itself: the throwaway registry config, and the infra
+# repo the Deploy stage clones.
+.docker-ghcr
+infra/
 data/
 notebooks/
 results/
